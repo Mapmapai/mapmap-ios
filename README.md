@@ -13,14 +13,14 @@ This is the binary + Swift-source distribution repository. Docs live at
 Add the package in Xcode (**File → Add Package Dependencies…**):
 
 ```
-https://github.com/weareprecode/mapmap-ios
+https://github.com/Mapmapai/mapmap-ios
 ```
 
 or in `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/weareprecode/mapmap-ios.git", from: "0.1.0")
+    .package(url: "https://github.com/Mapmapai/mapmap-ios.git", from: "0.1.0")
 ]
 ```
 
