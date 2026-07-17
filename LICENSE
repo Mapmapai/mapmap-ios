@@ -1,0 +1,16 @@
+Copyright (c) 2026 Precode Ltd. All rights reserved.
+
+This repository contains proprietary software of Precode Ltd ("MapMap").
+No licence, express or implied, is granted to any party to use, copy, modify,
+distribute or create derivative works of the first-party code in this
+repository except under a written agreement with Precode Ltd.
+
+Third-party open-source components are used under their respective permissive
+licences (MIT, BSD-2-Clause, BSD-3-Clause, Apache-2.0 and similar). Their
+notices are preserved in THIRD-PARTY-NOTICES.md and their provenance is
+documented in docs/LINEAGE.md. Nothing in this file overrides the terms of
+those third-party licences.
+
+Map data derived from OpenStreetMap is subject to the Open Database License
+(ODbL) 1.0 and is handled as a Derivative Database with a published
+recreation recipe — see docs/ODBL-RECIPE.md.
