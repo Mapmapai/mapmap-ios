@@ -31,7 +31,8 @@ let package = Package(
     targets: [
         .target(
             name: "MapMapKit",
-            dependencies: ["MapMapFFI"]
+            dependencies: ["MapMapFFI"],
+            resources: [.process("Resources")]
         ),
         .target(
             name: "MapMapValhalla",
