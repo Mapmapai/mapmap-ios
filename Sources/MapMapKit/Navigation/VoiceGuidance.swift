@@ -57,6 +57,42 @@ public struct VoiceProsody: Equatable, Sendable {
     }
 }
 
+/// Ref-count of in-flight utterances, deciding when the shared audio
+/// session may be deactivated (so ducked music comes back up) — pure and
+/// unit-testable anywhere, like ``VoiceProsody``. The platform wiring in
+/// ``VoiceGuidance`` mutates it under a lock: `AVSpeechSynthesizer`
+/// delegate callbacks arrive on an arbitrary queue.
+public struct SpeechSessionRefCount: Equatable, Sendable {
+    /// Utterances handed to the synthesiser that have not yet finished
+    /// or been cancelled.
+    public private(set) var outstanding: Int = 0
+
+    public init() {}
+
+    /// Record one utterance handed to the synthesiser.
+    public mutating func willSpeak() {
+        outstanding += 1
+    }
+
+    /// Record one utterance finishing or being cancelled. Returns `true`
+    /// when that was the last one — nothing is speaking or queued, so the
+    /// audio session should be deactivated. Spurious callbacks after a
+    /// ``reset()`` never trigger another deactivation.
+    public mutating func didEnd() -> Bool {
+        guard outstanding > 0 else { return false }
+        outstanding -= 1
+        return outstanding == 0
+    }
+
+    /// Clear everything (`stop()`). Returns `true` when there was
+    /// anything outstanding — i.e. the session should be deactivated.
+    public mutating func reset() -> Bool {
+        let had = outstanding > 0
+        outstanding = 0
+        return had
+    }
+}
+
 /// Spoken turn-by-turn guidance over `AVSpeechSynthesizer` (offline — the
 /// platform voices synthesise on device).
 ///
@@ -76,10 +112,14 @@ public struct VoiceProsody: Equatable, Sendable {
 /// rule is: announce each `utteranceId` exactly once, the first time it
 /// appears. Severity maps to prosody and earcons via ``VoiceProsody``;
 /// critical prompts stop pending speech. Off-route plays the warning
-/// earcon once per episode. On iOS the audio session ducks other audio
+/// earcon once per episode. Observe ``isSpeaking`` /
+/// ``onSpeakingChanged`` to reflect live speaking state in UI (e.g. a
+/// pulsing voice icon). On iOS the audio session ducks other audio
 /// around announcements (`.duckOthers` + `.voicePrompt`), so music dims
-/// rather than stops.
-public final class VoiceGuidance {
+/// rather than stops — and is deactivated again once the last utterance
+/// finishes, so music comes back to full volume instead of staying
+/// ducked forever.
+public final class VoiceGuidance: NSObject, AVSpeechSynthesizerDelegate {
 
     private let synthesizer = AVSpeechSynthesizer()
     private let language: String?
@@ -87,6 +127,27 @@ public final class VoiceGuidance {
     private var lastUtteranceId: String?
     private var offRouteAnnounced = false
     private var earconPlayer: AVAudioPlayer?
+    /// Guards `sessionRefCount` and the stored speaking flag: delegate
+    /// callbacks arrive on an arbitrary queue while `speak`/`stop` run on
+    /// the caller's.
+    private let sessionLock = NSLock()
+    private var sessionRefCount = SpeechSessionRefCount()
+    private var speaking = false
+
+    /// Whether an utterance is currently being spoken or queued. Mirrors
+    /// the transitions delivered to ``onSpeakingChanged``.
+    public var isSpeaking: Bool {
+        sessionLock.lock()
+        defer { sessionLock.unlock() }
+        return speaking
+    }
+
+    /// Called on every speaking-state transition: `true` when the first
+    /// utterance of a burst starts, `false` once the last one finishes,
+    /// is cancelled or ``stop()`` is called. May be invoked on an
+    /// arbitrary queue (the synthesiser's delegate queue) — hop to the
+    /// main actor before touching UI.
+    public var onSpeakingChanged: ((Bool) -> Void)?
 
     /// Whether announcements are muted. Toggle freely mid-drive; muting
     /// also stops anything mid-utterance.
@@ -112,6 +173,8 @@ public final class VoiceGuidance {
     ) {
         self.language = language
         self.baseRate = baseRate
+        super.init()
+        synthesizer.delegate = self
         #if os(iOS)
             // Navigation prompts duck (never stop) whatever else plays.
             try? AVAudioSession.sharedInstance().setCategory(
@@ -125,7 +188,7 @@ public final class VoiceGuidance {
     /// ``NavigationEngine/navigate(provider:)``.
     public func handle(_ update: GuidanceUpdate) {
         switch update {
-        case .navigating(_, _, _, _, _, _, _, let spoken, _, let severity):
+        case .navigating(_, _, _, _, _, _, _, let spoken, _, let severity, _):
             offRouteAnnounced = false
             guard let spoken, spoken.utteranceId != lastUtteranceId else { return }
             // Record before the mute check so prompts seen while muted are
@@ -148,18 +211,71 @@ public final class VoiceGuidance {
         handle(state.update)
     }
 
-    /// Stop speech and release the earcon player.
+    /// Stop speech and release the earcon player. Deactivates the audio
+    /// session (un-ducking whatever else plays) when anything was live.
     public func stop() {
+        sessionLock.lock()
+        let hadOutstanding = sessionRefCount.reset()
+        let stoppedSpeaking = speaking
+        speaking = false
+        sessionLock.unlock()
         synthesizer.stopSpeaking(at: .immediate)
         earconPlayer?.stop()
         earconPlayer = nil
         lastUtteranceId = nil
         offRouteAnnounced = false
+        if hadOutstanding { deactivateSession() }
+        if stoppedSpeaking { onSpeakingChanged?(false) }
+    }
+
+    // MARK: - AVSpeechSynthesizerDelegate
+
+    public func speechSynthesizer(
+        _ synthesizer: AVSpeechSynthesizer,
+        didFinish utterance: AVSpeechUtterance
+    ) {
+        utteranceEnded()
+    }
+
+    public func speechSynthesizer(
+        _ synthesizer: AVSpeechSynthesizer,
+        didCancel utterance: AVSpeechUtterance
+    ) {
+        utteranceEnded()
+    }
+
+    /// Called from delegate callbacks (arbitrary queue): once nothing is
+    /// speaking or queued, hand the audio session back so ducked audio
+    /// returns to full volume.
+    private func utteranceEnded() {
+        sessionLock.lock()
+        let idle = sessionRefCount.didEnd()
+        let stoppedSpeaking = idle && speaking
+        if idle { speaking = false }
+        sessionLock.unlock()
+        if idle { deactivateSession() }
+        if stoppedSpeaking { onSpeakingChanged?(false) }
+    }
+
+    private func deactivateSession() {
+        #if os(iOS)
+            try? AVAudioSession.sharedInstance().setActive(
+                false, options: .notifyOthersOnDeactivation)
+        #endif
     }
 
     private func speak(_ spoken: SpokenPrompt, severity: InstructionSeverity) {
         guard !muted else { return }
         let prosody = VoiceProsody.prosody(for: severity, baseRate: baseRate)
+        // Count the new utterance before any interrupt cancels the old
+        // one, so the ref-count never dips to zero (and deactivates the
+        // session) in the middle of a critical hand-over.
+        sessionLock.lock()
+        sessionRefCount.willSpeak()
+        let startedSpeaking = !speaking
+        speaking = true
+        sessionLock.unlock()
+        if startedSpeaking { onSpeakingChanged?(true) }
         if prosody.interrupt {
             synthesizer.stopSpeaking(at: .immediate)
         }

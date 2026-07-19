@@ -36,7 +36,7 @@ public enum GuidanceDisplay {
     /// The instruction to show for the current update, if any.
     public static func instruction(_ update: GuidanceUpdate) -> String? {
         switch update {
-        case .navigating(_, _, _, _, let currentInstruction, _, _, _, _, _):
+        case .navigating(_, _, _, _, let currentInstruction, _, _, _, _, _, _):
             return currentInstruction
         case .arrived, .offRoute:
             return nil
@@ -49,7 +49,7 @@ public enum GuidanceDisplay {
     /// `primary.maneuverType`/`maneuverModifier`).
     public static func visualBanner(_ update: GuidanceUpdate) -> VisualBanner? {
         switch update {
-        case .navigating(_, _, _, _, _, _, let visual, _, _, _):
+        case .navigating(_, _, _, _, _, _, let visual, _, _, _, _):
             return visual
         case .arrived, .offRoute:
             return nil
@@ -61,7 +61,7 @@ public enum GuidanceDisplay {
     /// prompt is reported on every update until it is superseded.
     public static func spokenPrompt(_ update: GuidanceUpdate) -> SpokenPrompt? {
         switch update {
-        case .navigating(_, _, _, _, _, _, _, let spoken, _, _):
+        case .navigating(_, _, _, _, _, _, _, let spoken, _, _, _):
             return spoken
         case .arrived, .offRoute:
             return nil
@@ -74,7 +74,7 @@ public enum GuidanceDisplay {
     /// due; arrival is routine.
     public static func severity(_ update: GuidanceUpdate) -> InstructionSeverity {
         switch update {
-        case .navigating(_, _, _, _, _, _, _, _, _, let severity):
+        case .navigating(_, _, _, _, _, _, _, _, _, let severity, _):
             return severity
         case .arrived:
             return .info
@@ -90,8 +90,23 @@ public enum GuidanceDisplay {
     /// jitters and drifts off the carriageway.
     public static func snappedFix(_ update: GuidanceUpdate) -> SnappedFix? {
         switch update {
-        case .navigating(_, _, _, _, _, _, _, _, let snapped, _):
+        case .navigating(_, _, _, _, _, _, _, _, let snapped, _, _):
             return snapped
+        case .arrived, .offRoute:
+            return nil
+        }
+    }
+
+    /// The posted speed limit for the current edge, when the route carries
+    /// a `maxspeed` annotation at the current position. Render a speed-limit
+    /// badge from `.known(kmh:)`, and compare the fix's speed against it for
+    /// an over-limit warning. `nil` with stock map data (no annotation);
+    /// `.unlimited`/`.unknown` distinguish an explicit no-limit from an
+    /// explicitly-unvalued annotation.
+    public static func speedLimit(_ update: GuidanceUpdate) -> SpeedLimit? {
+        switch update {
+        case .navigating(_, _, _, _, _, _, _, _, _, _, let speedLimit):
+            return speedLimit
         case .arrived, .offRoute:
             return nil
         }
@@ -120,7 +135,7 @@ public enum GuidanceDisplay {
         switch update {
         case .navigating(
             _, let distanceToNextManeuverM, let distanceRemainingM, _,
-            let currentInstruction, _, _, _, _, _):
+            let currentInstruction, _, _, _, _, _, _):
             return "\(currentInstruction) — "
                 + "\(formatDistance(distanceToNextManeuverM)) to manoeuvre, "
                 + "\(formatDistance(distanceRemainingM)) remaining"

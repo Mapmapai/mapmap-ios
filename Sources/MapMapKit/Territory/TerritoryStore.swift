@@ -120,6 +120,36 @@ public actor TerritoryStore {
         URL(fileURLWithPath: try manager().layerPath(territoryId: territoryId, kind: kind))
     }
 
+    /// A complete MapLibre style JSON for an installed territory with
+    /// **local** (offline) references, mirroring the web SDK's
+    /// `buildStyle()`. Load it straight into MapLibre — the territory
+    /// tile source points at the installed PMTiles layer via a
+    /// `pmtiles://<absolute path>` URL, so the map renders with radios
+    /// off. Packages without a baked style layer get the default MapMap
+    /// theme compiled on the fly.
+    public func territoryStyle(
+        territoryId: String, theme: StyleTheme = .light
+    ) async throws -> String {
+        let manager = try manager()
+        return try await blocking {
+            try manager.territoryStyle(territoryId: territoryId, theme: theme)
+        }
+    }
+
+    /// Open the installed territory's bundled geocode index for fully
+    /// offline on-device search. The returned handle holds the index
+    /// open (mmap-backed) — create it once per territory and reuse it:
+    ///
+    /// ```swift
+    /// let search = try await store.openSearch(territoryId: "uk")
+    /// let places = try search.search(
+    ///     query: "watford gap", near: nil, limit: 10)
+    /// ```
+    public func openSearch(territoryId: String) async throws -> TerritorySearch {
+        let manager = try manager()
+        return try await blocking { try manager.openSearch(territoryId: territoryId) }
+    }
+
     /// Remove an installed territory (clears the active marker if needed).
     public func remove(_ territoryId: String) async throws {
         let manager = try manager()

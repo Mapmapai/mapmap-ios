@@ -425,6 +425,22 @@ private let UNIFFI_CALLBACK_UNEXPECTED_ERROR: Int32 = 2
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterUInt8: FfiConverterPrimitive {
+    typealias FfiType = UInt8
+    typealias SwiftType = UInt8
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> UInt8 {
+        return try lift(readInt(&buf))
+    }
+
+    public static func write(_ value: UInt8, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterUInt16: FfiConverterPrimitive {
     typealias FfiType = UInt16
     typealias SwiftType = UInt16
@@ -483,6 +499,22 @@ fileprivate struct FfiConverterInt64: FfiConverterPrimitive {
 
     public static func write(_ value: Int64, into buf: inout [UInt8]) {
         writeInt(&buf, lower(value))
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterFloat: FfiConverterPrimitive {
+    typealias FfiType = Float
+    typealias SwiftType = Float
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> Float {
+        return try lift(readFloat(&buf))
+    }
+
+    public static func write(_ value: Float, into buf: inout [UInt8]) {
+        writeFloat(&buf, lower(value))
     }
 }
 
@@ -1223,6 +1255,259 @@ public func FfiConverterTypeLocalRouter_lower(_ value: LocalRouter) -> UInt64 {
 
 
 /**
+ * On-device probe collector. Feed it every guidance update with the fix's
+ * position, speed and timestamp; call [`finish`](ProbeCollector::finish) at
+ * arrival or trip abandonment to get the [`ProbeBatch`] to upload.
+ *
+ * Interior mutability (a `Mutex`) lets the FFI methods take `&self`, matching
+ * the [`crate::guidance::GuidanceSession`] object shape.
+ */
+public protocol ProbeCollectorProtocol: AnyObject, Sendable {
+    
+    /**
+     * Close the trip and return the batch to upload. `arrived` distinguishes a
+     * completed trip from an abandoned one (both apply end suppression).
+     */
+    func finish(arrived: Bool, timestampMs: Int64)  -> ProbeBatch
+    
+    /**
+     * Close the trip and return the exact JSON body to `POST /v1/probe`, or
+     * `None` when the batch carries nothing worth uploading. This is the
+     * single canonical serialiser for the probe wire format — platform code
+     * should upload this verbatim rather than re-encoding the record, so the
+     * wire form can never drift from what the gateway ingests.
+     */
+    func finishJson(arrived: Bool, timestampMs: Int64)  -> String?
+    
+    /**
+     * Feed one guidance update and its fix. `speed_mps` is the device's
+     * reported ground speed when available (preferred); pass `None` to let the
+     * collector estimate it from successive positions.
+     */
+    func observe(update: GuidanceUpdate, fixLat: Double, fixLon: Double, speedMps: Double?, timestampMs: Int64) 
+    
+    /**
+     * Set the opaque served-route token so the server can resolve segments.
+     */
+    func setRouteRef(routeRef: String) 
+    
+    /**
+     * Set the territory id stamped into the batch.
+     */
+    func setTerritory(territory: String) 
+    
+    /**
+     * Set the vehicle costing class stamped into the batch (a class only,
+     * never a vehicle or driver identifier).
+     */
+    func setVehicleClass(vehicleClass: String) 
+    
+}
+/**
+ * On-device probe collector. Feed it every guidance update with the fix's
+ * position, speed and timestamp; call [`finish`](ProbeCollector::finish) at
+ * arrival or trip abandonment to get the [`ProbeBatch`] to upload.
+ *
+ * Interior mutability (a `Mutex`) lets the FFI methods take `&self`, matching
+ * the [`crate::guidance::GuidanceSession`] object shape.
+ */
+open class ProbeCollector: ProbeCollectorProtocol, @unchecked Sendable {
+    fileprivate let handle: UInt64
+
+    /// Used to instantiate a [FFIObject] without an actual handle, for fakes in tests, mostly.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public struct NoHandle {
+        public init() {}
+    }
+
+    // TODO: We'd like this to be `private` but for Swifty reasons,
+    // we can't implement `FfiConverter` without making this `required` and we can't
+    // make it `required` without making it `public`.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    required public init(unsafeFromHandle handle: UInt64) {
+        self.handle = handle
+    }
+
+    // This constructor can be used to instantiate a fake object.
+    // - Parameter noHandle: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
+    //
+    // - Warning:
+    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing handle the FFI lower functions will crash.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public init(noHandle: NoHandle) {
+        self.handle = 0
+    }
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public func uniffiCloneHandle() -> UInt64 {
+        return try! rustCall { uniffi_sn_nav_core_fn_clone_probecollector(self.handle, $0) }
+    }
+    /**
+     * Create a collector with the given configuration.
+     */
+public convenience init(config: ProbeConfig) {
+    let handle =
+        try! rustCall() {
+    uniffi_sn_nav_core_fn_constructor_probecollector_new(
+        FfiConverterTypeProbeConfig_lower(config),$0
+    )
+}
+    self.init(unsafeFromHandle: handle)
+}
+
+    deinit {
+        if handle == 0 {
+            // Mock objects have handle=0 don't try to free them
+            return
+        }
+
+        try! rustCall { uniffi_sn_nav_core_fn_free_probecollector(handle, $0) }
+    }
+
+    
+
+    
+    /**
+     * Close the trip and return the batch to upload. `arrived` distinguishes a
+     * completed trip from an abandoned one (both apply end suppression).
+     */
+open func finish(arrived: Bool, timestampMs: Int64) -> ProbeBatch  {
+    return try!  FfiConverterTypeProbeBatch_lift(try! rustCall() {
+    uniffi_sn_nav_core_fn_method_probecollector_finish(
+            self.uniffiCloneHandle(),
+        FfiConverterBool.lower(arrived),
+        FfiConverterInt64.lower(timestampMs),$0
+    )
+})
+}
+    
+    /**
+     * Close the trip and return the exact JSON body to `POST /v1/probe`, or
+     * `None` when the batch carries nothing worth uploading. This is the
+     * single canonical serialiser for the probe wire format — platform code
+     * should upload this verbatim rather than re-encoding the record, so the
+     * wire form can never drift from what the gateway ingests.
+     */
+open func finishJson(arrived: Bool, timestampMs: Int64) -> String?  {
+    return try!  FfiConverterOptionString.lift(try! rustCall() {
+    uniffi_sn_nav_core_fn_method_probecollector_finish_json(
+            self.uniffiCloneHandle(),
+        FfiConverterBool.lower(arrived),
+        FfiConverterInt64.lower(timestampMs),$0
+    )
+})
+}
+    
+    /**
+     * Feed one guidance update and its fix. `speed_mps` is the device's
+     * reported ground speed when available (preferred); pass `None` to let the
+     * collector estimate it from successive positions.
+     */
+open func observe(update: GuidanceUpdate, fixLat: Double, fixLon: Double, speedMps: Double?, timestampMs: Int64)  {try! rustCall() {
+    uniffi_sn_nav_core_fn_method_probecollector_observe(
+            self.uniffiCloneHandle(),
+        FfiConverterTypeGuidanceUpdate_lower(update),
+        FfiConverterDouble.lower(fixLat),
+        FfiConverterDouble.lower(fixLon),
+        FfiConverterOptionDouble.lower(speedMps),
+        FfiConverterInt64.lower(timestampMs),$0
+    )
+}
+}
+    
+    /**
+     * Set the opaque served-route token so the server can resolve segments.
+     */
+open func setRouteRef(routeRef: String)  {try! rustCall() {
+    uniffi_sn_nav_core_fn_method_probecollector_set_route_ref(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(routeRef),$0
+    )
+}
+}
+    
+    /**
+     * Set the territory id stamped into the batch.
+     */
+open func setTerritory(territory: String)  {try! rustCall() {
+    uniffi_sn_nav_core_fn_method_probecollector_set_territory(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(territory),$0
+    )
+}
+}
+    
+    /**
+     * Set the vehicle costing class stamped into the batch (a class only,
+     * never a vehicle or driver identifier).
+     */
+open func setVehicleClass(vehicleClass: String)  {try! rustCall() {
+    uniffi_sn_nav_core_fn_method_probecollector_set_vehicle_class(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(vehicleClass),$0
+    )
+}
+}
+    
+
+    
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeProbeCollector: FfiConverter {
+    typealias FfiType = UInt64
+    typealias SwiftType = ProbeCollector
+
+    public static func lift(_ handle: UInt64) throws -> ProbeCollector {
+        return ProbeCollector(unsafeFromHandle: handle)
+    }
+
+    public static func lower(_ value: ProbeCollector) -> UInt64 {
+        return value.uniffiCloneHandle()
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ProbeCollector {
+        let handle: UInt64 = try readInt(&buf)
+        return try lift(handle)
+    }
+
+    public static func write(_ value: ProbeCollector, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeProbeCollector_lift(_ handle: UInt64) throws -> ProbeCollector {
+    return try FfiConverterTypeProbeCollector.lift(handle)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeProbeCollector_lower(_ value: ProbeCollector) -> UInt64 {
+    return FfiConverterTypeProbeCollector.lower(value)
+}
+
+
+
+
+
+
+/**
  * Manages signed offline territory packages (see [`crate::territory`]).
  */
 public protocol TerritoryManagerProtocol: AnyObject, Sendable {
@@ -1275,6 +1560,14 @@ public protocol TerritoryManagerProtocol: AnyObject, Sendable {
     func list() throws  -> [TerritoryInfo]
     
     /**
+     * Open the installed territory's bundled geocode index for on-device
+     * search. The returned [`TerritorySearch`] holds the index open
+     * (mmap-backed) — create it once per territory and reuse it across
+     * queries.
+     */
+    func openSearch(territoryId: String) throws  -> TerritorySearch
+    
+    /**
      * Plan a differential update from the installed manifest to
      * `new_manifest_json` (a signed manifest's JSON body, as served by
      * the update channel).
@@ -1290,6 +1583,20 @@ public protocol TerritoryManagerProtocol: AnyObject, Sendable {
      * Mark a territory as active (persisted atomically).
      */
     func setActive(territoryId: String) throws 
+    
+    /**
+     * A complete MapLibre style JSON for an installed territory with
+     * **local** (offline) references, mirroring the web SDK's
+     * `buildStyle()`. Load it straight into MapLibre — the territory
+     * tile source points at the installed PMTiles layer via a
+     * `pmtiles://<absolute path>` URL, so the map renders with radios
+     * off. Packages without a baked style layer get the default MapMap
+     * theme compiled on the fly over the package's PMTiles layer.
+     *
+     * The `glyphs` endpoint stays hosted (MapLibre caches fetched glyph
+     * ranges; no offline glyph bundle ships in packages today).
+     */
+    func territoryStyle(territoryId: String, theme: StyleTheme) throws  -> String
     
 }
 /**
@@ -1464,6 +1771,21 @@ open func list()throws  -> [TerritoryInfo]  {
 }
     
     /**
+     * Open the installed territory's bundled geocode index for on-device
+     * search. The returned [`TerritorySearch`] holds the index open
+     * (mmap-backed) — create it once per territory and reuse it across
+     * queries.
+     */
+open func openSearch(territoryId: String)throws  -> TerritorySearch  {
+    return try  FfiConverterTypeTerritorySearch_lift(try rustCallWithError(FfiConverterTypeNavCoreError_lift) {
+    uniffi_sn_nav_core_fn_method_territorymanager_open_search(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(territoryId),$0
+    )
+})
+}
+    
+    /**
      * Plan a differential update from the installed manifest to
      * `new_manifest_json` (a signed manifest's JSON body, as served by
      * the update channel).
@@ -1497,6 +1819,28 @@ open func setActive(territoryId: String)throws   {try rustCallWithError(FfiConve
         FfiConverterString.lower(territoryId),$0
     )
 }
+}
+    
+    /**
+     * A complete MapLibre style JSON for an installed territory with
+     * **local** (offline) references, mirroring the web SDK's
+     * `buildStyle()`. Load it straight into MapLibre — the territory
+     * tile source points at the installed PMTiles layer via a
+     * `pmtiles://<absolute path>` URL, so the map renders with radios
+     * off. Packages without a baked style layer get the default MapMap
+     * theme compiled on the fly over the package's PMTiles layer.
+     *
+     * The `glyphs` endpoint stays hosted (MapLibre caches fetched glyph
+     * ranges; no offline glyph bundle ships in packages today).
+     */
+open func territoryStyle(territoryId: String, theme: StyleTheme)throws  -> String  {
+    return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeNavCoreError_lift) {
+    uniffi_sn_nav_core_fn_method_territorymanager_territory_style(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(territoryId),
+        FfiConverterTypeStyleTheme_lower(theme),$0
+    )
+})
 }
     
 
@@ -1542,6 +1886,170 @@ public func FfiConverterTypeTerritoryManager_lift(_ handle: UInt64) throws -> Te
 #endif
 public func FfiConverterTypeTerritoryManager_lower(_ value: TerritoryManager) -> UInt64 {
     return FfiConverterTypeTerritoryManager.lower(value)
+}
+
+
+
+
+
+
+/**
+ * On-device search over an installed territory's bundled geocode index
+ * (see [`TerritoryManager::open_search`]). Fully offline; queries are
+ * synchronous and mmap-backed — call from a background thread/dispatcher
+ * like any other disk-bound SDK call.
+ */
+public protocol TerritorySearchProtocol: AnyObject, Sendable {
+    
+    /**
+     * Reverse geocode: the nearest indexed places to a coordinate,
+     * nearest first.
+     */
+    func reverse(lat: Double, lon: Double, limit: UInt32) throws  -> [Place]
+    
+    /**
+     * Free-text search (addresses, streets, places, POIs, UK postcodes;
+     * prefix-tokenised, so it works for search-as-you-type). `near`
+     * biases ranking towards the given point and fills each result's
+     * `distance_m`; `limit` caps the number of hits.
+     */
+    func search(query: String, near: RoutePoint?, limit: UInt32) throws  -> [Place]
+    
+}
+/**
+ * On-device search over an installed territory's bundled geocode index
+ * (see [`TerritoryManager::open_search`]). Fully offline; queries are
+ * synchronous and mmap-backed — call from a background thread/dispatcher
+ * like any other disk-bound SDK call.
+ */
+open class TerritorySearch: TerritorySearchProtocol, @unchecked Sendable {
+    fileprivate let handle: UInt64
+
+    /// Used to instantiate a [FFIObject] without an actual handle, for fakes in tests, mostly.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public struct NoHandle {
+        public init() {}
+    }
+
+    // TODO: We'd like this to be `private` but for Swifty reasons,
+    // we can't implement `FfiConverter` without making this `required` and we can't
+    // make it `required` without making it `public`.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    required public init(unsafeFromHandle handle: UInt64) {
+        self.handle = handle
+    }
+
+    // This constructor can be used to instantiate a fake object.
+    // - Parameter noHandle: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
+    //
+    // - Warning:
+    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing handle the FFI lower functions will crash.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public init(noHandle: NoHandle) {
+        self.handle = 0
+    }
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public func uniffiCloneHandle() -> UInt64 {
+        return try! rustCall { uniffi_sn_nav_core_fn_clone_territorysearch(self.handle, $0) }
+    }
+    // No primary constructor declared for this class.
+
+    deinit {
+        if handle == 0 {
+            // Mock objects have handle=0 don't try to free them
+            return
+        }
+
+        try! rustCall { uniffi_sn_nav_core_fn_free_territorysearch(handle, $0) }
+    }
+
+    
+
+    
+    /**
+     * Reverse geocode: the nearest indexed places to a coordinate,
+     * nearest first.
+     */
+open func reverse(lat: Double, lon: Double, limit: UInt32)throws  -> [Place]  {
+    return try  FfiConverterSequenceTypePlace.lift(try rustCallWithError(FfiConverterTypeNavCoreError_lift) {
+    uniffi_sn_nav_core_fn_method_territorysearch_reverse(
+            self.uniffiCloneHandle(),
+        FfiConverterDouble.lower(lat),
+        FfiConverterDouble.lower(lon),
+        FfiConverterUInt32.lower(limit),$0
+    )
+})
+}
+    
+    /**
+     * Free-text search (addresses, streets, places, POIs, UK postcodes;
+     * prefix-tokenised, so it works for search-as-you-type). `near`
+     * biases ranking towards the given point and fills each result's
+     * `distance_m`; `limit` caps the number of hits.
+     */
+open func search(query: String, near: RoutePoint?, limit: UInt32)throws  -> [Place]  {
+    return try  FfiConverterSequenceTypePlace.lift(try rustCallWithError(FfiConverterTypeNavCoreError_lift) {
+    uniffi_sn_nav_core_fn_method_territorysearch_search(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(query),
+        FfiConverterOptionTypeRoutePoint.lower(near),
+        FfiConverterUInt32.lower(limit),$0
+    )
+})
+}
+    
+
+    
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeTerritorySearch: FfiConverter {
+    typealias FfiType = UInt64
+    typealias SwiftType = TerritorySearch
+
+    public static func lift(_ handle: UInt64) throws -> TerritorySearch {
+        return TerritorySearch(unsafeFromHandle: handle)
+    }
+
+    public static func lower(_ value: TerritorySearch) -> UInt64 {
+        return value.uniffiCloneHandle()
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> TerritorySearch {
+        let handle: UInt64 = try readInt(&buf)
+        return try lift(handle)
+    }
+
+    public static func write(_ value: TerritorySearch, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTerritorySearch_lift(_ handle: UInt64) throws -> TerritorySearch {
+    return try FfiConverterTypeTerritorySearch.lift(handle)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTerritorySearch_lower(_ value: TerritorySearch) -> UInt64 {
+    return FfiConverterTypeTerritorySearch.lower(value)
 }
 
 
@@ -2164,6 +2672,1034 @@ public func FfiConverterTypeLaneGuidance_lower(_ value: LaneGuidance) -> RustBuf
 
 
 /**
+ * Coarse origin/destination for a trip. Both cells are geohashes of
+ * *suppressed* (mid-trip) positions, so they are already
+ * [`ProbeConfig::trip_end_suppression_m`] away from the true ends.
+ */
+public struct OdRecord: Equatable, Hashable {
+    /**
+     * Geohash cell of the first committed position.
+     */
+    public var originCell: String
+    /**
+     * Geohash cell of the last committed position.
+     */
+    public var destCell: String
+    /**
+     * Coarse departure bucket, e.g. `tue_am_peak`.
+     */
+    public var departBucket: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Geohash cell of the first committed position.
+         */originCell: String, 
+        /**
+         * Geohash cell of the last committed position.
+         */destCell: String, 
+        /**
+         * Coarse departure bucket, e.g. `tue_am_peak`.
+         */departBucket: String) {
+        self.originCell = originCell
+        self.destCell = destCell
+        self.departBucket = departBucket
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension OdRecord: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeOdRecord: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> OdRecord {
+        return
+            try OdRecord(
+                originCell: FfiConverterString.read(from: &buf), 
+                destCell: FfiConverterString.read(from: &buf), 
+                departBucket: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: OdRecord, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.originCell, into: &buf)
+        FfiConverterString.write(value.destCell, into: &buf)
+        FfiConverterString.write(value.departBucket, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeOdRecord_lift(_ buf: RustBuffer) throws -> OdRecord {
+    return try FfiConverterTypeOdRecord.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeOdRecord_lower(_ value: OdRecord) -> RustBuffer {
+    return FfiConverterTypeOdRecord.lower(value)
+}
+
+
+/**
+ * One on-device search result: the matched document's display and
+ * context fields plus its position.
+ */
+public struct Place: Equatable, Hashable {
+    /**
+     * Stable identifier (e.g. an OSM-derived id).
+     */
+    public var id: String
+    /**
+     * What kind of entity this is.
+     */
+    public var kind: PlaceKind
+    /**
+     * Primary display name.
+     */
+    public var name: String
+    /**
+     * House number, for [`PlaceKind::Address`] results.
+     */
+    public var housenumber: String?
+    /**
+     * Containing street name, for addresses and POIs.
+     */
+    public var street: String?
+    /**
+     * Containing town or city.
+     */
+    public var locality: String?
+    /**
+     * Containing county / region.
+     */
+    public var region: String?
+    /**
+     * Postcode, formatted as displayed (e.g. `"SW1A 2AA"`).
+     */
+    public var postcode: String?
+    /**
+     * ISO 3166-1 alpha-2 country code (e.g. `"GB"`).
+     */
+    public var countryCode: String
+    /**
+     * Latitude in decimal degrees (WGS84).
+     */
+    public var lat: Double
+    /**
+     * Longitude in decimal degrees (WGS84).
+     */
+    public var lon: Double
+    /**
+     * POI categories (e.g. `"fuel"`, `"truck_stop"`). Empty for non-POIs.
+     */
+    public var categories: [String]
+    /**
+     * Rank boost in [0, 1]; larger means more prominent.
+     */
+    public var importance: Float
+    /**
+     * Haversine distance in metres from the query's `near` point, when
+     * one was given.
+     */
+    public var distanceM: Double?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Stable identifier (e.g. an OSM-derived id).
+         */id: String, 
+        /**
+         * What kind of entity this is.
+         */kind: PlaceKind, 
+        /**
+         * Primary display name.
+         */name: String, 
+        /**
+         * House number, for [`PlaceKind::Address`] results.
+         */housenumber: String?, 
+        /**
+         * Containing street name, for addresses and POIs.
+         */street: String?, 
+        /**
+         * Containing town or city.
+         */locality: String?, 
+        /**
+         * Containing county / region.
+         */region: String?, 
+        /**
+         * Postcode, formatted as displayed (e.g. `"SW1A 2AA"`).
+         */postcode: String?, 
+        /**
+         * ISO 3166-1 alpha-2 country code (e.g. `"GB"`).
+         */countryCode: String, 
+        /**
+         * Latitude in decimal degrees (WGS84).
+         */lat: Double, 
+        /**
+         * Longitude in decimal degrees (WGS84).
+         */lon: Double, 
+        /**
+         * POI categories (e.g. `"fuel"`, `"truck_stop"`). Empty for non-POIs.
+         */categories: [String], 
+        /**
+         * Rank boost in [0, 1]; larger means more prominent.
+         */importance: Float, 
+        /**
+         * Haversine distance in metres from the query's `near` point, when
+         * one was given.
+         */distanceM: Double?) {
+        self.id = id
+        self.kind = kind
+        self.name = name
+        self.housenumber = housenumber
+        self.street = street
+        self.locality = locality
+        self.region = region
+        self.postcode = postcode
+        self.countryCode = countryCode
+        self.lat = lat
+        self.lon = lon
+        self.categories = categories
+        self.importance = importance
+        self.distanceM = distanceM
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension Place: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypePlace: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> Place {
+        return
+            try Place(
+                id: FfiConverterString.read(from: &buf), 
+                kind: FfiConverterTypePlaceKind.read(from: &buf), 
+                name: FfiConverterString.read(from: &buf), 
+                housenumber: FfiConverterOptionString.read(from: &buf), 
+                street: FfiConverterOptionString.read(from: &buf), 
+                locality: FfiConverterOptionString.read(from: &buf), 
+                region: FfiConverterOptionString.read(from: &buf), 
+                postcode: FfiConverterOptionString.read(from: &buf), 
+                countryCode: FfiConverterString.read(from: &buf), 
+                lat: FfiConverterDouble.read(from: &buf), 
+                lon: FfiConverterDouble.read(from: &buf), 
+                categories: FfiConverterSequenceString.read(from: &buf), 
+                importance: FfiConverterFloat.read(from: &buf), 
+                distanceM: FfiConverterOptionDouble.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: Place, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.id, into: &buf)
+        FfiConverterTypePlaceKind.write(value.kind, into: &buf)
+        FfiConverterString.write(value.name, into: &buf)
+        FfiConverterOptionString.write(value.housenumber, into: &buf)
+        FfiConverterOptionString.write(value.street, into: &buf)
+        FfiConverterOptionString.write(value.locality, into: &buf)
+        FfiConverterOptionString.write(value.region, into: &buf)
+        FfiConverterOptionString.write(value.postcode, into: &buf)
+        FfiConverterString.write(value.countryCode, into: &buf)
+        FfiConverterDouble.write(value.lat, into: &buf)
+        FfiConverterDouble.write(value.lon, into: &buf)
+        FfiConverterSequenceString.write(value.categories, into: &buf)
+        FfiConverterFloat.write(value.importance, into: &buf)
+        FfiConverterOptionDouble.write(value.distanceM, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePlace_lift(_ buf: RustBuffer) throws -> Place {
+    return try FfiConverterTypePlace.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePlace_lower(_ value: Place) -> RustBuffer {
+    return FfiConverterTypePlace.lower(value)
+}
+
+
+/**
+ * A completed trip's aggregates, ready for the platform layer to POST to the
+ * probe ingest endpoint. Contains no trajectory.
+ */
+public struct ProbeBatch: Equatable, Hashable {
+    /**
+     * Wire-format version ([`PROBE_FORMAT`]).
+     */
+    public var probeFormat: UInt32
+    /**
+     * Territory id the trip was navigated in, when the caller supplies it.
+     */
+    public var territory: String?
+    /**
+     * Vehicle costing class (e.g. `truck_40t`) — a class only, never a
+     * registration, VIN or driver identifier.
+     */
+    public var vehicleClass: String?
+    /**
+     * Opaque token for the served route, so the server can resolve
+     * `step_index` to stable edge / OSM way IDs.
+     */
+    public var routeRef: String?
+    /**
+     * Per-segment aggregates that cleared suppression and the observation
+     * threshold.
+     */
+    public var segments: [SegmentAggregate]
+    /**
+     * Coarse, time-bucketed events.
+     */
+    public var events: [ProbeEvent]
+    /**
+     * Coarse origin/destination, when [`ProbeConfig::collect_od`] is set and
+     * the trip was long enough to have committed positions.
+     */
+    public var od: OdRecord?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Wire-format version ([`PROBE_FORMAT`]).
+         */probeFormat: UInt32, 
+        /**
+         * Territory id the trip was navigated in, when the caller supplies it.
+         */territory: String?, 
+        /**
+         * Vehicle costing class (e.g. `truck_40t`) — a class only, never a
+         * registration, VIN or driver identifier.
+         */vehicleClass: String?, 
+        /**
+         * Opaque token for the served route, so the server can resolve
+         * `step_index` to stable edge / OSM way IDs.
+         */routeRef: String?, 
+        /**
+         * Per-segment aggregates that cleared suppression and the observation
+         * threshold.
+         */segments: [SegmentAggregate], 
+        /**
+         * Coarse, time-bucketed events.
+         */events: [ProbeEvent], 
+        /**
+         * Coarse origin/destination, when [`ProbeConfig::collect_od`] is set and
+         * the trip was long enough to have committed positions.
+         */od: OdRecord?) {
+        self.probeFormat = probeFormat
+        self.territory = territory
+        self.vehicleClass = vehicleClass
+        self.routeRef = routeRef
+        self.segments = segments
+        self.events = events
+        self.od = od
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension ProbeBatch: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeProbeBatch: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ProbeBatch {
+        return
+            try ProbeBatch(
+                probeFormat: FfiConverterUInt32.read(from: &buf), 
+                territory: FfiConverterOptionString.read(from: &buf), 
+                vehicleClass: FfiConverterOptionString.read(from: &buf), 
+                routeRef: FfiConverterOptionString.read(from: &buf), 
+                segments: FfiConverterSequenceTypeSegmentAggregate.read(from: &buf), 
+                events: FfiConverterSequenceTypeProbeEvent.read(from: &buf), 
+                od: FfiConverterOptionTypeOdRecord.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: ProbeBatch, into buf: inout [UInt8]) {
+        FfiConverterUInt32.write(value.probeFormat, into: &buf)
+        FfiConverterOptionString.write(value.territory, into: &buf)
+        FfiConverterOptionString.write(value.vehicleClass, into: &buf)
+        FfiConverterOptionString.write(value.routeRef, into: &buf)
+        FfiConverterSequenceTypeSegmentAggregate.write(value.segments, into: &buf)
+        FfiConverterSequenceTypeProbeEvent.write(value.events, into: &buf)
+        FfiConverterOptionTypeOdRecord.write(value.od, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeProbeBatch_lift(_ buf: RustBuffer) throws -> ProbeBatch {
+    return try FfiConverterTypeProbeBatch.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeProbeBatch_lower(_ value: ProbeBatch) -> RustBuffer {
+    return FfiConverterTypeProbeBatch.lower(value)
+}
+
+
+/**
+ * Probe collector configuration, flattened for FFI like
+ * [`crate::guidance::GuidanceConfig`].
+ *
+ * Collection is **off by default**: `enabled` must be set explicitly (and, in
+ * deployment, gated on the fleet customer's opt-in). Everything a batch
+ * contains follows from these knobs.
+ */
+public struct ProbeConfig: Equatable, Hashable {
+    /**
+     * Whether the collector aggregates at all. When `false`, [`ProbeCollector`]
+     * ignores every fix and [`ProbeCollector::finish`] returns an empty batch.
+     */
+    public var enabled: Bool
+    /**
+     * Radius in metres around both trip ends within which observations are
+     * discarded (see the module's trip-end-suppression note).
+     */
+    public var tripEndSuppressionM: Double
+    /**
+     * Minimum observation count for a segment cell to appear in the batch.
+     */
+    public var minSegmentObservations: UInt32
+    /**
+     * Width of the time-of-day bucket in minutes (the day-of-week prefix is
+     * always present); 5 gives the `tue_0745`-style buckets that line up with
+     * the factory's weekly historical-speed profiles.
+     */
+    public var timeBucketMinutes: UInt32
+    /**
+     * Geohash precision (characters) for the origin/destination cells; 5 is
+     * roughly a 5 km cell.
+     */
+    public var odCellPrecision: UInt8
+    /**
+     * Whether to emit the coarse origin/destination record at all.
+     */
+    public var collectOd: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Whether the collector aggregates at all. When `false`, [`ProbeCollector`]
+         * ignores every fix and [`ProbeCollector::finish`] returns an empty batch.
+         */enabled: Bool = false, 
+        /**
+         * Radius in metres around both trip ends within which observations are
+         * discarded (see the module's trip-end-suppression note).
+         */tripEndSuppressionM: Double = Double(500.0), 
+        /**
+         * Minimum observation count for a segment cell to appear in the batch.
+         */minSegmentObservations: UInt32 = UInt32(1), 
+        /**
+         * Width of the time-of-day bucket in minutes (the day-of-week prefix is
+         * always present); 5 gives the `tue_0745`-style buckets that line up with
+         * the factory's weekly historical-speed profiles.
+         */timeBucketMinutes: UInt32 = UInt32(5), 
+        /**
+         * Geohash precision (characters) for the origin/destination cells; 5 is
+         * roughly a 5 km cell.
+         */odCellPrecision: UInt8 = UInt8(5), 
+        /**
+         * Whether to emit the coarse origin/destination record at all.
+         */collectOd: Bool = true) {
+        self.enabled = enabled
+        self.tripEndSuppressionM = tripEndSuppressionM
+        self.minSegmentObservations = minSegmentObservations
+        self.timeBucketMinutes = timeBucketMinutes
+        self.odCellPrecision = odCellPrecision
+        self.collectOd = collectOd
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension ProbeConfig: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeProbeConfig: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ProbeConfig {
+        return
+            try ProbeConfig(
+                enabled: FfiConverterBool.read(from: &buf), 
+                tripEndSuppressionM: FfiConverterDouble.read(from: &buf), 
+                minSegmentObservations: FfiConverterUInt32.read(from: &buf), 
+                timeBucketMinutes: FfiConverterUInt32.read(from: &buf), 
+                odCellPrecision: FfiConverterUInt8.read(from: &buf), 
+                collectOd: FfiConverterBool.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: ProbeConfig, into buf: inout [UInt8]) {
+        FfiConverterBool.write(value.enabled, into: &buf)
+        FfiConverterDouble.write(value.tripEndSuppressionM, into: &buf)
+        FfiConverterUInt32.write(value.minSegmentObservations, into: &buf)
+        FfiConverterUInt32.write(value.timeBucketMinutes, into: &buf)
+        FfiConverterUInt8.write(value.odCellPrecision, into: &buf)
+        FfiConverterBool.write(value.collectOd, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeProbeConfig_lift(_ buf: RustBuffer) throws -> ProbeConfig {
+    return try FfiConverterTypeProbeConfig.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeProbeConfig_lower(_ value: ProbeConfig) -> RustBuffer {
+    return FfiConverterTypeProbeConfig.lower(value)
+}
+
+
+/**
+ * The point and course a recalculated route should depart from.
+ */
+public struct RerouteAnchor: Equatable, Hashable {
+    /**
+     * Latitude in decimal degrees (WGS84).
+     */
+    public var lat: Double
+    /**
+     * Longitude in decimal degrees (WGS84).
+     */
+    public var lon: Double
+    /**
+     * Course over ground in degrees clockwise from true north, when known.
+     * Threaded into the request as the anchor's Valhalla `heading`.
+     */
+    public var courseDeg: Double?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Latitude in decimal degrees (WGS84).
+         */lat: Double, 
+        /**
+         * Longitude in decimal degrees (WGS84).
+         */lon: Double, 
+        /**
+         * Course over ground in degrees clockwise from true north, when known.
+         * Threaded into the request as the anchor's Valhalla `heading`.
+         */courseDeg: Double?) {
+        self.lat = lat
+        self.lon = lon
+        self.courseDeg = courseDeg
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension RerouteAnchor: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeRerouteAnchor: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> RerouteAnchor {
+        return
+            try RerouteAnchor(
+                lat: FfiConverterDouble.read(from: &buf), 
+                lon: FfiConverterDouble.read(from: &buf), 
+                courseDeg: FfiConverterOptionDouble.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: RerouteAnchor, into buf: inout [UInt8]) {
+        FfiConverterDouble.write(value.lat, into: &buf)
+        FfiConverterDouble.write(value.lon, into: &buf)
+        FfiConverterOptionDouble.write(value.courseDeg, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRerouteAnchor_lift(_ buf: RustBuffer) throws -> RerouteAnchor {
+    return try FfiConverterTypeRerouteAnchor.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRerouteAnchor_lower(_ value: RerouteAnchor) -> RustBuffer {
+    return FfiConverterTypeRerouteAnchor.lower(value)
+}
+
+
+/**
+ * Reroute controller configuration, flattened for FFI like
+ * [`crate::guidance::GuidanceConfig`].
+ *
+ * Both the count gate and the duration gate must pass for a reroute to be
+ * confirmed: a burst of fixes arriving in a fraction of a second should not
+ * out-vote the duration requirement, and a slow trickle of fixes should not
+ * out-vote the count requirement.
+ */
+public struct RerouteConfig: Equatable, Hashable {
+    /**
+     * Minimum number of consecutive off-route fixes before a reroute is
+     * confirmed. A single off-route fix that recovers on the next update
+     * (a GPS blip) never reaches this count.
+     */
+    public var minConsecutiveOffrouteFixes: UInt32
+    /**
+     * Minimum time in seconds the vehicle must have been continuously off
+     * route before a reroute is confirmed.
+     */
+    public var minOffrouteDurationS: Double
+    /**
+     * Minimum time in seconds between successive reroutes. While inside this
+     * window the controller reports [`RerouteState::CoolingDown`] instead of
+     * firing again — the platform is still applying the previous reroute.
+     */
+    public var minIntervalBetweenReroutesS: Double
+    /**
+     * Whether the controller is active at all. When `false` it always
+     * reports [`RerouteState::Monitoring`] and never confirms a reroute.
+     */
+    public var enabled: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Minimum number of consecutive off-route fixes before a reroute is
+         * confirmed. A single off-route fix that recovers on the next update
+         * (a GPS blip) never reaches this count.
+         */minConsecutiveOffrouteFixes: UInt32 = UInt32(3), 
+        /**
+         * Minimum time in seconds the vehicle must have been continuously off
+         * route before a reroute is confirmed.
+         */minOffrouteDurationS: Double = Double(5.0), 
+        /**
+         * Minimum time in seconds between successive reroutes. While inside this
+         * window the controller reports [`RerouteState::CoolingDown`] instead of
+         * firing again — the platform is still applying the previous reroute.
+         */minIntervalBetweenReroutesS: Double = Double(10.0), 
+        /**
+         * Whether the controller is active at all. When `false` it always
+         * reports [`RerouteState::Monitoring`] and never confirms a reroute.
+         */enabled: Bool = true) {
+        self.minConsecutiveOffrouteFixes = minConsecutiveOffrouteFixes
+        self.minOffrouteDurationS = minOffrouteDurationS
+        self.minIntervalBetweenReroutesS = minIntervalBetweenReroutesS
+        self.enabled = enabled
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension RerouteConfig: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeRerouteConfig: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> RerouteConfig {
+        return
+            try RerouteConfig(
+                minConsecutiveOffrouteFixes: FfiConverterUInt32.read(from: &buf), 
+                minOffrouteDurationS: FfiConverterDouble.read(from: &buf), 
+                minIntervalBetweenReroutesS: FfiConverterDouble.read(from: &buf), 
+                enabled: FfiConverterBool.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: RerouteConfig, into buf: inout [UInt8]) {
+        FfiConverterUInt32.write(value.minConsecutiveOffrouteFixes, into: &buf)
+        FfiConverterDouble.write(value.minOffrouteDurationS, into: &buf)
+        FfiConverterDouble.write(value.minIntervalBetweenReroutesS, into: &buf)
+        FfiConverterBool.write(value.enabled, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRerouteConfig_lift(_ buf: RustBuffer) throws -> RerouteConfig {
+    return try FfiConverterTypeRerouteConfig.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRerouteConfig_lower(_ value: RerouteConfig) -> RustBuffer {
+    return FfiConverterTypeRerouteConfig.lower(value)
+}
+
+
+/**
+ * A confirmed reroute: where to route from, where to, and why.
+ */
+public struct RerouteDecision: Equatable, Hashable {
+    /**
+     * Why the reroute was requested.
+     */
+    public var reason: RerouteReason
+    /**
+     * The current position and course to route from.
+     */
+    public var anchor: RerouteAnchor
+    /**
+     * The not-yet-visited waypoints, in visiting order (destination last).
+     */
+    public var waypointsRemaining: [RerouteWaypoint]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Why the reroute was requested.
+         */reason: RerouteReason, 
+        /**
+         * The current position and course to route from.
+         */anchor: RerouteAnchor, 
+        /**
+         * The not-yet-visited waypoints, in visiting order (destination last).
+         */waypointsRemaining: [RerouteWaypoint]) {
+        self.reason = reason
+        self.anchor = anchor
+        self.waypointsRemaining = waypointsRemaining
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension RerouteDecision: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeRerouteDecision: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> RerouteDecision {
+        return
+            try RerouteDecision(
+                reason: FfiConverterTypeRerouteReason.read(from: &buf), 
+                anchor: FfiConverterTypeRerouteAnchor.read(from: &buf), 
+                waypointsRemaining: FfiConverterSequenceTypeRerouteWaypoint.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: RerouteDecision, into buf: inout [UInt8]) {
+        FfiConverterTypeRerouteReason.write(value.reason, into: &buf)
+        FfiConverterTypeRerouteAnchor.write(value.anchor, into: &buf)
+        FfiConverterSequenceTypeRerouteWaypoint.write(value.waypointsRemaining, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRerouteDecision_lift(_ buf: RustBuffer) throws -> RerouteDecision {
+    return try FfiConverterTypeRerouteDecision.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRerouteDecision_lower(_ value: RerouteDecision) -> RustBuffer {
+    return FfiConverterTypeRerouteDecision.lower(value)
+}
+
+
+/**
+ * One onward waypoint of the active route.
+ */
+public struct RerouteWaypoint: Equatable, Hashable {
+    /**
+     * Latitude in decimal degrees (WGS84).
+     */
+    public var lat: Double
+    /**
+     * Longitude in decimal degrees (WGS84).
+     */
+    public var lon: Double
+    /**
+     * Whether this is a `break` (leg boundary, with arrival/departure
+     * narration) rather than a pass-through `via`.
+     */
+    public var isBreak: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Latitude in decimal degrees (WGS84).
+         */lat: Double, 
+        /**
+         * Longitude in decimal degrees (WGS84).
+         */lon: Double, 
+        /**
+         * Whether this is a `break` (leg boundary, with arrival/departure
+         * narration) rather than a pass-through `via`.
+         */isBreak: Bool) {
+        self.lat = lat
+        self.lon = lon
+        self.isBreak = isBreak
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension RerouteWaypoint: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeRerouteWaypoint: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> RerouteWaypoint {
+        return
+            try RerouteWaypoint(
+                lat: FfiConverterDouble.read(from: &buf), 
+                lon: FfiConverterDouble.read(from: &buf), 
+                isBreak: FfiConverterBool.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: RerouteWaypoint, into buf: inout [UInt8]) {
+        FfiConverterDouble.write(value.lat, into: &buf)
+        FfiConverterDouble.write(value.lon, into: &buf)
+        FfiConverterBool.write(value.isBreak, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRerouteWaypoint_lift(_ buf: RustBuffer) throws -> RerouteWaypoint {
+    return try FfiConverterTypeRerouteWaypoint.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRerouteWaypoint_lower(_ value: RerouteWaypoint) -> RustBuffer {
+    return FfiConverterTypeRerouteWaypoint.lower(value)
+}
+
+
+/**
+ * One maneuver of the primary route, in SI units with shape indices into
+ * [`RouteResult::geometry`]. Parsed once by the core so integrators never
+ * re-parse the raw Valhalla JSON themselves.
+ */
+public struct RouteManeuver: Equatable, Hashable {
+    /**
+     * Written instruction, e.g. `Turn right onto Main Street`.
+     */
+    public var instruction: String
+    /**
+     * Numeric Valhalla maneuver type (0–43, exactly as tabulated in the
+     * public turn-by-turn API reference: 1–3 start, 4–6 destination,
+     * 9–16 turns, 26–27 roundabouts, …).
+     */
+    public var maneuverType: UInt32
+    /**
+     * Spoken instruction immediately before the transition, when present.
+     */
+    public var verbalPreTransitionInstruction: String?
+    /**
+     * Spoken instruction immediately after the transition, when present.
+     */
+    public var verbalPostTransitionInstruction: String?
+    /**
+     * Street names along the maneuver (empty when unnamed).
+     */
+    public var streetNames: [String]
+    /**
+     * Maneuver length in metres.
+     */
+    public var distanceM: Double
+    /**
+     * Estimated maneuver time in seconds.
+     */
+    public var durationS: Double
+    /**
+     * Index into [`RouteResult::geometry`] where the maneuver starts.
+     */
+    public var beginShapeIndex: UInt32
+    /**
+     * Index into [`RouteResult::geometry`] where the maneuver ends.
+     */
+    public var endShapeIndex: UInt32
+    /**
+     * Roundabout exit ordinal, for roundabout maneuvers.
+     */
+    public var roundaboutExitCount: UInt32?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Written instruction, e.g. `Turn right onto Main Street`.
+         */instruction: String, 
+        /**
+         * Numeric Valhalla maneuver type (0–43, exactly as tabulated in the
+         * public turn-by-turn API reference: 1–3 start, 4–6 destination,
+         * 9–16 turns, 26–27 roundabouts, …).
+         */maneuverType: UInt32, 
+        /**
+         * Spoken instruction immediately before the transition, when present.
+         */verbalPreTransitionInstruction: String?, 
+        /**
+         * Spoken instruction immediately after the transition, when present.
+         */verbalPostTransitionInstruction: String?, 
+        /**
+         * Street names along the maneuver (empty when unnamed).
+         */streetNames: [String], 
+        /**
+         * Maneuver length in metres.
+         */distanceM: Double, 
+        /**
+         * Estimated maneuver time in seconds.
+         */durationS: Double, 
+        /**
+         * Index into [`RouteResult::geometry`] where the maneuver starts.
+         */beginShapeIndex: UInt32, 
+        /**
+         * Index into [`RouteResult::geometry`] where the maneuver ends.
+         */endShapeIndex: UInt32, 
+        /**
+         * Roundabout exit ordinal, for roundabout maneuvers.
+         */roundaboutExitCount: UInt32?) {
+        self.instruction = instruction
+        self.maneuverType = maneuverType
+        self.verbalPreTransitionInstruction = verbalPreTransitionInstruction
+        self.verbalPostTransitionInstruction = verbalPostTransitionInstruction
+        self.streetNames = streetNames
+        self.distanceM = distanceM
+        self.durationS = durationS
+        self.beginShapeIndex = beginShapeIndex
+        self.endShapeIndex = endShapeIndex
+        self.roundaboutExitCount = roundaboutExitCount
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension RouteManeuver: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeRouteManeuver: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> RouteManeuver {
+        return
+            try RouteManeuver(
+                instruction: FfiConverterString.read(from: &buf), 
+                maneuverType: FfiConverterUInt32.read(from: &buf), 
+                verbalPreTransitionInstruction: FfiConverterOptionString.read(from: &buf), 
+                verbalPostTransitionInstruction: FfiConverterOptionString.read(from: &buf), 
+                streetNames: FfiConverterSequenceString.read(from: &buf), 
+                distanceM: FfiConverterDouble.read(from: &buf), 
+                durationS: FfiConverterDouble.read(from: &buf), 
+                beginShapeIndex: FfiConverterUInt32.read(from: &buf), 
+                endShapeIndex: FfiConverterUInt32.read(from: &buf), 
+                roundaboutExitCount: FfiConverterOptionUInt32.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: RouteManeuver, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.instruction, into: &buf)
+        FfiConverterUInt32.write(value.maneuverType, into: &buf)
+        FfiConverterOptionString.write(value.verbalPreTransitionInstruction, into: &buf)
+        FfiConverterOptionString.write(value.verbalPostTransitionInstruction, into: &buf)
+        FfiConverterSequenceString.write(value.streetNames, into: &buf)
+        FfiConverterDouble.write(value.distanceM, into: &buf)
+        FfiConverterDouble.write(value.durationS, into: &buf)
+        FfiConverterUInt32.write(value.beginShapeIndex, into: &buf)
+        FfiConverterUInt32.write(value.endShapeIndex, into: &buf)
+        FfiConverterOptionUInt32.write(value.roundaboutExitCount, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRouteManeuver_lift(_ buf: RustBuffer) throws -> RouteManeuver {
+    return try FfiConverterTypeRouteManeuver.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRouteManeuver_lower(_ value: RouteManeuver) -> RustBuffer {
+    return FfiConverterTypeRouteManeuver.lower(value)
+}
+
+
+/**
  * A route waypoint.
  */
 public struct RoutePoint: Equatable, Hashable {
@@ -2241,6 +3777,17 @@ public struct RouteResult: Equatable, Hashable {
      */
     public var summary: RouteSummary
     /**
+     * The primary route's full geometry (decoded polyline, ordered) —
+     * ready for a MapLibre LineString. (Defaulted so foreign code that
+     * hand-builds records — e.g. test fixtures — stays source-compatible.)
+     */
+    public var geometry: [RoutePoint]
+    /**
+     * The primary route's maneuvers, flattened across legs, with shape
+     * indices into [`Self::geometry`].
+     */
+    public var maneuvers: [RouteManeuver]
+    /**
      * The raw Valhalla response JSON (feed this to
      * [`GuidanceSession::new`]).
      */
@@ -2258,6 +3805,15 @@ public struct RouteResult: Equatable, Hashable {
          * SI summary of the primary route.
          */summary: RouteSummary, 
         /**
+         * The primary route's full geometry (decoded polyline, ordered) —
+         * ready for a MapLibre LineString. (Defaulted so foreign code that
+         * hand-builds records — e.g. test fixtures — stays source-compatible.)
+         */geometry: [RoutePoint] = [], 
+        /**
+         * The primary route's maneuvers, flattened across legs, with shape
+         * indices into [`Self::geometry`].
+         */maneuvers: [RouteManeuver] = [], 
+        /**
          * The raw Valhalla response JSON (feed this to
          * [`GuidanceSession::new`]).
          */valhallaResponseJson: String, 
@@ -2266,6 +3822,8 @@ public struct RouteResult: Equatable, Hashable {
          * consumers (e.g. map matching debug tooling).
          */osrmResponseJson: String) {
         self.summary = summary
+        self.geometry = geometry
+        self.maneuvers = maneuvers
         self.valhallaResponseJson = valhallaResponseJson
         self.osrmResponseJson = osrmResponseJson
     }
@@ -2287,6 +3845,8 @@ public struct FfiConverterTypeRouteResult: FfiConverterRustBuffer {
         return
             try RouteResult(
                 summary: FfiConverterTypeRouteSummary.read(from: &buf), 
+                geometry: FfiConverterSequenceTypeRoutePoint.read(from: &buf), 
+                maneuvers: FfiConverterSequenceTypeRouteManeuver.read(from: &buf), 
                 valhallaResponseJson: FfiConverterString.read(from: &buf), 
                 osrmResponseJson: FfiConverterString.read(from: &buf)
         )
@@ -2294,6 +3854,8 @@ public struct FfiConverterTypeRouteResult: FfiConverterRustBuffer {
 
     public static func write(_ value: RouteResult, into buf: inout [UInt8]) {
         FfiConverterTypeRouteSummary.write(value.summary, into: &buf)
+        FfiConverterSequenceTypeRoutePoint.write(value.geometry, into: &buf)
+        FfiConverterSequenceTypeRouteManeuver.write(value.maneuvers, into: &buf)
         FfiConverterString.write(value.valhallaResponseJson, into: &buf)
         FfiConverterString.write(value.osrmResponseJson, into: &buf)
     }
@@ -2411,6 +3973,132 @@ public func FfiConverterTypeRouteSummary_lift(_ buf: RustBuffer) throws -> Route
 #endif
 public func FfiConverterTypeRouteSummary_lower(_ value: RouteSummary) -> RustBuffer {
     return FfiConverterTypeRouteSummary.lower(value)
+}
+
+
+/**
+ * One aggregated road segment: statistics for a `step_index` within the
+ * served route, in one day-of-week × time-of-day bucket.
+ */
+public struct SegmentAggregate: Equatable, Hashable {
+    /**
+     * Zero-based step index within the served route (`route_ref`).
+     */
+    public var stepIndex: UInt32
+    /**
+     * Day-of-week × time-of-day bucket, e.g. `tue_0745`.
+     */
+    public var todBucket: String
+    /**
+     * Number of fixes folded into this cell.
+     */
+    public var observations: UInt32
+    /**
+     * Mean speed over the cell, in km/h.
+     */
+    public var meanSpeedKmh: Double
+    /**
+     * 85th-percentile speed over the cell, in km/h (exact up to
+     * [`MAX_SPEED_SAMPLE`] observations, reservoir-estimated beyond).
+     */
+    public var p85SpeedKmh: Double
+    /**
+     * Seconds spent at or below [`STOPPED_SPEED_MPS`] in this cell.
+     */
+    public var stoppedS: Double
+    /**
+     * Mean signed delta between observed speed and the posted limit, in km/h
+     * (positive = over the limit). `None` when no fix in the cell carried a
+     * known [`SpeedLimit::Known`] limit.
+     */
+    public var limitDeltaKmh: Double?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Zero-based step index within the served route (`route_ref`).
+         */stepIndex: UInt32, 
+        /**
+         * Day-of-week × time-of-day bucket, e.g. `tue_0745`.
+         */todBucket: String, 
+        /**
+         * Number of fixes folded into this cell.
+         */observations: UInt32, 
+        /**
+         * Mean speed over the cell, in km/h.
+         */meanSpeedKmh: Double, 
+        /**
+         * 85th-percentile speed over the cell, in km/h (exact up to
+         * [`MAX_SPEED_SAMPLE`] observations, reservoir-estimated beyond).
+         */p85SpeedKmh: Double, 
+        /**
+         * Seconds spent at or below [`STOPPED_SPEED_MPS`] in this cell.
+         */stoppedS: Double, 
+        /**
+         * Mean signed delta between observed speed and the posted limit, in km/h
+         * (positive = over the limit). `None` when no fix in the cell carried a
+         * known [`SpeedLimit::Known`] limit.
+         */limitDeltaKmh: Double?) {
+        self.stepIndex = stepIndex
+        self.todBucket = todBucket
+        self.observations = observations
+        self.meanSpeedKmh = meanSpeedKmh
+        self.p85SpeedKmh = p85SpeedKmh
+        self.stoppedS = stoppedS
+        self.limitDeltaKmh = limitDeltaKmh
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension SegmentAggregate: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSegmentAggregate: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SegmentAggregate {
+        return
+            try SegmentAggregate(
+                stepIndex: FfiConverterUInt32.read(from: &buf), 
+                todBucket: FfiConverterString.read(from: &buf), 
+                observations: FfiConverterUInt32.read(from: &buf), 
+                meanSpeedKmh: FfiConverterDouble.read(from: &buf), 
+                p85SpeedKmh: FfiConverterDouble.read(from: &buf), 
+                stoppedS: FfiConverterDouble.read(from: &buf), 
+                limitDeltaKmh: FfiConverterOptionDouble.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: SegmentAggregate, into buf: inout [UInt8]) {
+        FfiConverterUInt32.write(value.stepIndex, into: &buf)
+        FfiConverterString.write(value.todBucket, into: &buf)
+        FfiConverterUInt32.write(value.observations, into: &buf)
+        FfiConverterDouble.write(value.meanSpeedKmh, into: &buf)
+        FfiConverterDouble.write(value.p85SpeedKmh, into: &buf)
+        FfiConverterDouble.write(value.stoppedS, into: &buf)
+        FfiConverterOptionDouble.write(value.limitDeltaKmh, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSegmentAggregate_lift(_ buf: RustBuffer) throws -> SegmentAggregate {
+    return try FfiConverterTypeSegmentAggregate.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSegmentAggregate_lower(_ value: SegmentAggregate) -> RustBuffer {
+    return FfiConverterTypeSegmentAggregate.lower(value)
 }
 
 
@@ -3630,7 +5318,14 @@ public enum GuidanceUpdate: Equatable, Hashable {
          * Urgency of the current step's instruction (see
          * [`InstructionSeverity`] for the derivation). Voice layers key
          * prosody and earcons off this.
-         */severity: InstructionSeverity
+         */severity: InstructionSeverity, 
+        /**
+         * Posted speed limit for the current edge, for a speed-limit badge
+         * and over-limit warnings. `None` when the route carries no
+         * `maxspeed` annotation at the current position (the usual case with
+         * stock map data); see [`SpeedLimit`] for the `Unlimited`/`Unknown`
+         * distinctions.
+         */speedLimit: SpeedLimit?
     )
     /**
      * The user has arrived at the destination.
@@ -3667,7 +5362,7 @@ public struct FfiConverterTypeGuidanceUpdate: FfiConverterRustBuffer {
         let variant: Int32 = try readInt(&buf)
         switch variant {
         
-        case 1: return .navigating(stepIndex: try FfiConverterUInt32.read(from: &buf), distanceToNextManeuverM: try FfiConverterDouble.read(from: &buf), distanceRemainingM: try FfiConverterDouble.read(from: &buf), durationRemainingS: try FfiConverterDouble.read(from: &buf), currentInstruction: try FfiConverterString.read(from: &buf), deviationM: try FfiConverterOptionDouble.read(from: &buf), visual: try FfiConverterOptionTypeVisualBanner.read(from: &buf), spoken: try FfiConverterOptionTypeSpokenPrompt.read(from: &buf), snapped: try FfiConverterOptionTypeSnappedFix.read(from: &buf), severity: try FfiConverterTypeInstructionSeverity.read(from: &buf)
+        case 1: return .navigating(stepIndex: try FfiConverterUInt32.read(from: &buf), distanceToNextManeuverM: try FfiConverterDouble.read(from: &buf), distanceRemainingM: try FfiConverterDouble.read(from: &buf), durationRemainingS: try FfiConverterDouble.read(from: &buf), currentInstruction: try FfiConverterString.read(from: &buf), deviationM: try FfiConverterOptionDouble.read(from: &buf), visual: try FfiConverterOptionTypeVisualBanner.read(from: &buf), spoken: try FfiConverterOptionTypeSpokenPrompt.read(from: &buf), snapped: try FfiConverterOptionTypeSnappedFix.read(from: &buf), severity: try FfiConverterTypeInstructionSeverity.read(from: &buf), speedLimit: try FfiConverterOptionTypeSpeedLimit.read(from: &buf)
         )
         
         case 2: return .arrived
@@ -3683,7 +5378,7 @@ public struct FfiConverterTypeGuidanceUpdate: FfiConverterRustBuffer {
         switch value {
         
         
-        case let .navigating(stepIndex,distanceToNextManeuverM,distanceRemainingM,durationRemainingS,currentInstruction,deviationM,visual,spoken,snapped,severity):
+        case let .navigating(stepIndex,distanceToNextManeuverM,distanceRemainingM,durationRemainingS,currentInstruction,deviationM,visual,spoken,snapped,severity,speedLimit):
             writeInt(&buf, Int32(1))
             FfiConverterUInt32.write(stepIndex, into: &buf)
             FfiConverterDouble.write(distanceToNextManeuverM, into: &buf)
@@ -3695,6 +5390,7 @@ public struct FfiConverterTypeGuidanceUpdate: FfiConverterRustBuffer {
             FfiConverterOptionTypeSpokenPrompt.write(spoken, into: &buf)
             FfiConverterOptionTypeSnappedFix.write(snapped, into: &buf)
             FfiConverterTypeInstructionSeverity.write(severity, into: &buf)
+            FfiConverterOptionTypeSpeedLimit.write(speedLimit, into: &buf)
             
         
         case .arrived:
@@ -3993,6 +5689,15 @@ public enum NavCoreError: Swift.Error, Equatable, Hashable, Foundation.Localized
          * Human-readable description.
          */message: String
     )
+    /**
+     * On-device geocode search failure (index missing, unreadable or of
+     * an unsupported schema version).
+     */
+    case Search(
+        /**
+         * Human-readable description.
+         */message: String
+    )
 
     
 
@@ -4037,6 +5742,9 @@ public struct FfiConverterTypeNavCoreError: FfiConverterRustBuffer {
         case 5: return .InvalidArgument(
             message: try FfiConverterString.read(from: &buf)
             )
+        case 6: return .Search(
+            message: try FfiConverterString.read(from: &buf)
+            )
 
          default: throw UniffiInternalError.unexpectedEnumCase
         }
@@ -4073,6 +5781,11 @@ public struct FfiConverterTypeNavCoreError: FfiConverterRustBuffer {
             writeInt(&buf, Int32(5))
             FfiConverterString.write(message, into: &buf)
             
+        
+        case let .Search(message):
+            writeInt(&buf, Int32(6))
+            FfiConverterString.write(message, into: &buf)
+            
         }
     }
 }
@@ -4091,6 +5804,581 @@ public func FfiConverterTypeNavCoreError_lift(_ buf: RustBuffer) throws -> NavCo
 public func FfiConverterTypeNavCoreError_lower(_ value: NavCoreError) -> RustBuffer {
     return FfiConverterTypeNavCoreError.lower(value)
 }
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/**
+ * The kind of entity a [`Place`] describes, mirroring
+ * [`sn_geocode::DocKind`].
+ */
+
+public enum PlaceKind: Equatable, Hashable {
+    
+    /**
+     * A single addressable building or unit (housenumber + street).
+     */
+    case address
+    /**
+     * A named street or road.
+     */
+    case street
+    /**
+     * A town, city, village or suburb.
+     */
+    case locality
+    /**
+     * A point of interest (fuel station, truck stop, museum, …).
+     */
+    case poi
+    /**
+     * A postcode centroid (full or outward code).
+     */
+    case postcode
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension PlaceKind: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypePlaceKind: FfiConverterRustBuffer {
+    typealias SwiftType = PlaceKind
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> PlaceKind {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .address
+        
+        case 2: return .street
+        
+        case 3: return .locality
+        
+        case 4: return .poi
+        
+        case 5: return .postcode
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: PlaceKind, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .address:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .street:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .locality:
+            writeInt(&buf, Int32(3))
+        
+        
+        case .poi:
+            writeInt(&buf, Int32(4))
+        
+        
+        case .postcode:
+            writeInt(&buf, Int32(5))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePlaceKind_lift(_ buf: RustBuffer) throws -> PlaceKind {
+    return try FfiConverterTypePlaceKind.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePlaceKind_lower(_ value: PlaceKind) -> RustBuffer {
+    return FfiConverterTypePlaceKind.lower(value)
+}
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/**
+ * A coarse, time-bucketed event within a trip.
+ */
+
+public enum ProbeEvent: Equatable, Hashable {
+    
+    /**
+     * The vehicle left the route (a confirmed off-route condition from
+     * guidance). Carries only the time bucket and a coarse deviation band.
+     */
+    case offRoute(
+        /**
+         * Day-of-week × time-of-day bucket.
+         */todBucket: String, 
+        /**
+         * Deviation band in metres (rounded to 50 m), not the raw distance.
+         */deviationBandM: UInt32
+    )
+    /**
+     * The realised trip duration against the engine's first estimate. Feeds
+     * ETA-accuracy calibration; carries no location.
+     */
+    case etaOutcome(
+        /**
+         * The engine's predicted remaining duration at the first update, s.
+         */predictedS: Double, 
+        /**
+         * The actual elapsed trip duration, s.
+         */actualS: Double, 
+        /**
+         * Coarse route-length band, e.g. `10-20` (km).
+         */routeLenKmBucket: String
+    )
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension ProbeEvent: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeProbeEvent: FfiConverterRustBuffer {
+    typealias SwiftType = ProbeEvent
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ProbeEvent {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .offRoute(todBucket: try FfiConverterString.read(from: &buf), deviationBandM: try FfiConverterUInt32.read(from: &buf)
+        )
+        
+        case 2: return .etaOutcome(predictedS: try FfiConverterDouble.read(from: &buf), actualS: try FfiConverterDouble.read(from: &buf), routeLenKmBucket: try FfiConverterString.read(from: &buf)
+        )
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: ProbeEvent, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case let .offRoute(todBucket,deviationBandM):
+            writeInt(&buf, Int32(1))
+            FfiConverterString.write(todBucket, into: &buf)
+            FfiConverterUInt32.write(deviationBandM, into: &buf)
+            
+        
+        case let .etaOutcome(predictedS,actualS,routeLenKmBucket):
+            writeInt(&buf, Int32(2))
+            FfiConverterDouble.write(predictedS, into: &buf)
+            FfiConverterDouble.write(actualS, into: &buf)
+            FfiConverterString.write(routeLenKmBucket, into: &buf)
+            
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeProbeEvent_lift(_ buf: RustBuffer) throws -> ProbeEvent {
+    return try FfiConverterTypeProbeEvent.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeProbeEvent_lower(_ value: ProbeEvent) -> RustBuffer {
+    return FfiConverterTypeProbeEvent.lower(value)
+}
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/**
+ * Why a reroute was requested.
+ */
+
+public enum RerouteReason: Equatable, Hashable {
+    
+    /**
+     * The vehicle left the route line; `deviation_m` is the distance from
+     * the route at the confirming fix.
+     */
+    case offRoute(
+        /**
+         * Deviation from the route line in metres.
+         */deviationM: Double
+    )
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension RerouteReason: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeRerouteReason: FfiConverterRustBuffer {
+    typealias SwiftType = RerouteReason
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> RerouteReason {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .offRoute(deviationM: try FfiConverterDouble.read(from: &buf)
+        )
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: RerouteReason, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case let .offRoute(deviationM):
+            writeInt(&buf, Int32(1))
+            FfiConverterDouble.write(deviationM, into: &buf)
+            
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRerouteReason_lift(_ buf: RustBuffer) throws -> RerouteReason {
+    return try FfiConverterTypeRerouteReason.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRerouteReason_lower(_ value: RerouteReason) -> RustBuffer {
+    return FfiConverterTypeRerouteReason.lower(value)
+}
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/**
+ * The controller's state after the most recent update, for UI and telemetry.
+ */
+
+public enum RerouteState: Equatable, Hashable {
+    
+    /**
+     * On route (or recovered): nothing to do.
+     */
+    case monitoring
+    /**
+     * Off route, but not yet confirmed — the count and/or duration gate has
+     * not been met. `count` is the run of consecutive off-route fixes so far.
+     */
+    case offRouteSuspected(
+        /**
+         * Consecutive off-route fixes observed so far.
+         */count: UInt32
+    )
+    /**
+     * A reroute is confirmed for this update; the accompanying
+     * [`RerouteDecision`] should be routed. Reported exactly once per
+     * confirmed departure.
+     */
+    case rerouteNeeded
+    /**
+     * Off route and confirmed again, but suppressed because a reroute fired
+     * within [`RerouteConfig::min_interval_between_reroutes_s`].
+     */
+    case coolingDown
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension RerouteState: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeRerouteState: FfiConverterRustBuffer {
+    typealias SwiftType = RerouteState
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> RerouteState {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .monitoring
+        
+        case 2: return .offRouteSuspected(count: try FfiConverterUInt32.read(from: &buf)
+        )
+        
+        case 3: return .rerouteNeeded
+        
+        case 4: return .coolingDown
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: RerouteState, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .monitoring:
+            writeInt(&buf, Int32(1))
+        
+        
+        case let .offRouteSuspected(count):
+            writeInt(&buf, Int32(2))
+            FfiConverterUInt32.write(count, into: &buf)
+            
+        
+        case .rerouteNeeded:
+            writeInt(&buf, Int32(3))
+        
+        
+        case .coolingDown:
+            writeInt(&buf, Int32(4))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRerouteState_lift(_ buf: RustBuffer) throws -> RerouteState {
+    return try FfiConverterTypeRerouteState.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRerouteState_lower(_ value: RerouteState) -> RustBuffer {
+    return FfiConverterTypeRerouteState.lower(value)
+}
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/**
+ * The posted speed limit for the current edge, for a speed-limit badge and
+ * over-limit warnings.
+ *
+ * This is surfaced from the OSRM `annotation.maxspeed` that Ferrostar threads
+ * through its navigation state (`TripState::Navigating.annotation_json`) at
+ * the current geometry index, in the Mapbox shape
+ * (<https://docs.mapbox.com/api/navigation/directions/#route-leg-object>). It
+ * appears only when the route actually carries speed-limit data: on-device
+ * that means the Valhalla graph was built with OSM `maxspeed` (and admin data
+ * for implicit limits) and the engine emitted per-maneuver limits, which the
+ * translator forwarded (see [`sn_valhalla::valhalla::SpeedLimit`]). With
+ * stock data there is no annotation and [`GuidanceUpdate::Navigating`] reports
+ * no limit at all — values are never invented.
+ */
+
+public enum SpeedLimit: Equatable, Hashable {
+    
+    /**
+     * A known posted limit, normalised to kilometres per hour regardless of
+     * the unit the route expressed it in.
+     */
+    case known(
+        /**
+         * The posted maximum in km/h.
+         */kmh: Double
+    )
+    /**
+     * The road is de-restricted (Mapbox `maxspeed` `none`; OSM
+     * `maxspeed=none`, e.g. a German autobahn) — show a "no limit" badge, do
+     * not warn.
+     */
+    case unlimited
+    /**
+     * A limit applies but is unknown for the current segment (Mapbox
+     * `maxspeed` `unknown`) — the data source annotates this position but has
+     * no value for it. Distinct from the field being absent entirely.
+     */
+    case unknown
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension SpeedLimit: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSpeedLimit: FfiConverterRustBuffer {
+    typealias SwiftType = SpeedLimit
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SpeedLimit {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .known(kmh: try FfiConverterDouble.read(from: &buf)
+        )
+        
+        case 2: return .unlimited
+        
+        case 3: return .unknown
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: SpeedLimit, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case let .known(kmh):
+            writeInt(&buf, Int32(1))
+            FfiConverterDouble.write(kmh, into: &buf)
+            
+        
+        case .unlimited:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .unknown:
+            writeInt(&buf, Int32(3))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSpeedLimit_lift(_ buf: RustBuffer) throws -> SpeedLimit {
+    return try FfiConverterTypeSpeedLimit.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSpeedLimit_lower(_ value: SpeedLimit) -> RustBuffer {
+    return FfiConverterTypeSpeedLimit.lower(value)
+}
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/**
+ * Which packaged style variant [`TerritoryManager::territory_style`]
+ * returns, mirroring [`crate::territory::StyleTheme`] (and the web SDK's
+ * `buildStyle({ theme })` names).
+ */
+
+public enum StyleTheme: Equatable, Hashable {
+    
+    /**
+     * The light (day) style — also the package default.
+     */
+    case light
+    /**
+     * The dark (night) style.
+     */
+    case dark
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension StyleTheme: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeStyleTheme: FfiConverterRustBuffer {
+    typealias SwiftType = StyleTheme
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> StyleTheme {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .light
+        
+        case 2: return .dark
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: StyleTheme, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .light:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .dark:
+            writeInt(&buf, Int32(2))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeStyleTheme_lift(_ buf: RustBuffer) throws -> StyleTheme {
+    return try FfiConverterTypeStyleTheme.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeStyleTheme_lower(_ value: StyleTheme) -> RustBuffer {
+    return FfiConverterTypeStyleTheme.lower(value)
+}
+
 
 #if swift(>=5.8)
 @_documentation(visibility: private)
@@ -4263,6 +6551,54 @@ fileprivate struct FfiConverterOptionTypeBannerLine: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterOptionTypeOdRecord: FfiConverterRustBuffer {
+    typealias SwiftType = OdRecord?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeOdRecord.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeOdRecord.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionTypeRoutePoint: FfiConverterRustBuffer {
+    typealias SwiftType = RoutePoint?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeRoutePoint.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeRoutePoint.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterOptionTypeSnappedFix: FfiConverterRustBuffer {
     typealias SwiftType = SnappedFix?
 
@@ -4359,6 +6695,30 @@ fileprivate struct FfiConverterOptionTypeAdrTunnelCode: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterOptionTypeSpeedLimit: FfiConverterRustBuffer {
+    typealias SwiftType = SpeedLimit?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeSpeedLimit.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeSpeedLimit.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceString: FfiConverterRustBuffer {
     typealias SwiftType = [String]
 
@@ -4434,6 +6794,81 @@ fileprivate struct FfiConverterSequenceTypeLaneGuidance: FfiConverterRustBuffer 
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceTypePlace: FfiConverterRustBuffer {
+    typealias SwiftType = [Place]
+
+    public static func write(_ value: [Place], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypePlace.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [Place] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [Place]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypePlace.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeRerouteWaypoint: FfiConverterRustBuffer {
+    typealias SwiftType = [RerouteWaypoint]
+
+    public static func write(_ value: [RerouteWaypoint], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeRerouteWaypoint.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [RerouteWaypoint] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [RerouteWaypoint]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeRerouteWaypoint.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeRouteManeuver: FfiConverterRustBuffer {
+    typealias SwiftType = [RouteManeuver]
+
+    public static func write(_ value: [RouteManeuver], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeRouteManeuver.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [RouteManeuver] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [RouteManeuver]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeRouteManeuver.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypeRoutePoint: FfiConverterRustBuffer {
     typealias SwiftType = [RoutePoint]
 
@@ -4451,6 +6886,31 @@ fileprivate struct FfiConverterSequenceTypeRoutePoint: FfiConverterRustBuffer {
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
             seq.append(try FfiConverterTypeRoutePoint.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeSegmentAggregate: FfiConverterRustBuffer {
+    typealias SwiftType = [SegmentAggregate]
+
+    public static func write(_ value: [SegmentAggregate], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeSegmentAggregate.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [SegmentAggregate] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [SegmentAggregate]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeSegmentAggregate.read(from: &buf))
         }
         return seq
     }
@@ -4505,6 +6965,31 @@ fileprivate struct FfiConverterSequenceTypeAdrTunnelCategory: FfiConverterRustBu
         return seq
     }
 }
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeProbeEvent: FfiConverterRustBuffer {
+    typealias SwiftType = [ProbeEvent]
+
+    public static func write(_ value: [ProbeEvent], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeProbeEvent.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [ProbeEvent] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [ProbeEvent]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeProbeEvent.read(from: &buf))
+        }
+        return seq
+    }
+}
 /**
  * Build the Valhalla request JSON an on-device engine accepts, with ADR
  * costing options merged (conflicts rejected). Useful when foreign code
@@ -4543,7 +7028,8 @@ public func forbiddenCategories(profile: AdrProfile) -> [AdrTunnelCategory]  {
 })
 }
 /**
- * Parse a raw on-device route response into a [`RouteResult`].
+ * Parse a raw on-device route response into a [`RouteResult`], including
+ * the typed [`RouteResult::geometry`] and [`RouteResult::maneuvers`].
  */
 public func parseRouteResult(responseJson: String)throws  -> RouteResult  {
     return try  FfiConverterTypeRouteResult_lift(try rustCallWithError(FfiConverterTypeNavCoreError_lift) {
@@ -4568,20 +7054,26 @@ public func routeOffline(router: LocalRouter, locations: [RoutePoint], costing: 
 })
 }
 /**
- * A style made safe for a turn-by-turn navigation view: strips the
- * `building-3d` extrusion layer (and is where future nav-view safeguards
- * will live). Call it on whatever style the app otherwise uses, right
- * before loading the navigation map.
+ * Prepares a style for a turn-by-turn navigation view. Call it on
+ * whatever style the app otherwise uses, right before loading the
+ * navigation map; it is where nav-view safeguards live.
  *
- * Navigation runs long sessions at exactly the street-level zooms where
- * MapLibre Native's fill-extrusion memory bug bites (maplibre-native#4107);
- * production MapLibre nav apps have had iOS kill them mid-drive with 3D
- * buildings on. Revisit when upstream lands LOD/culling for extrusions.
+ * By default (`keep_buildings_3d = true`) the style's 3D building state
+ * is left exactly as the app configured it: MapLibre Native's historical
+ * fill-extrusion memory blow-up (maplibre-native#4107) is fixed by the
+ * instancing rework (#4256; Android >= 13.2.0, iOS >= 6.26.1), and a
+ * navigation-loop soak (`qa/expo-3d-soak`, 17 Jul 2026) measured a
+ * bounded ~170 MB for city-wide 3D at nav zoom — flat, no growth.
+ *
+ * Pass `keep_buildings_3d = false` to strip the `building-3d` layer —
+ * the pre-fix behaviour — when targeting MapLibre pins older than the
+ * fix or low-memory devices you have not measured.
  */
-public func styleForNavigation(styleJson: String)throws  -> String  {
+public func styleForNavigation(styleJson: String, keepBuildings3d: Bool = true)throws  -> String  {
     return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeNavCoreError_lift) {
     uniffi_sn_nav_core_fn_func_style_for_navigation(
-        FfiConverterString.lower(styleJson),$0
+        FfiConverterString.lower(styleJson),
+        FfiConverterBool.lower(keepBuildings3d),$0
     )
 })
 }
@@ -4591,12 +7083,14 @@ public func styleForNavigation(styleJson: String)throws  -> String  {
  * adjusted document to load into MapLibre. Idempotent; errors with
  * [`NavCoreError::InvalidArgument`] on non-style input.
  *
- * 3D buildings are OFF by default on mobile, deliberately: MapLibre
- * Native's fill-extrusion memory use at street-level zooms is still
- * prohibitive on phones (maplibre-native#4107 — 900 MB+ at zoom 17,
- * and iOS kills apps under that pressure). Opt in only for map
- * *browsing* views on devices you've measured; never for turn-by-turn
- * (use [`style_for_navigation`] there).
+ * Safe on MapLibre Native releases carrying the fill-extrusion
+ * instancing fix (maplibre-native#4256, merged 2026-05-05: Android
+ * >= 13.2.0, iOS >= 6.26.1) — the historical street-zoom memory blow-up
+ * (#4107, 900 MB+ at zoom 17) is fixed there. Measured 17 Jul 2026 on a
+ * Pixel-class device (`qa/expo-3d-soak`): city-wide extrusions at
+ * zoom 16.5/pitch 60 cost a bounded ~170 MB over an identical no-3D
+ * control, flat over the soak. On pins older than the fix, keep this
+ * off outside measured map-browsing views.
  */
 public func styleWithBuildings3d(styleJson: String, enabled: Bool)throws  -> String  {
     return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeNavCoreError_lift) {
@@ -4631,16 +7125,16 @@ private let initializationResult: InitializationResult = {
     if (uniffi_sn_nav_core_checksum_func_forbidden_categories() != 50376) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_sn_nav_core_checksum_func_parse_route_result() != 5613) {
+    if (uniffi_sn_nav_core_checksum_func_parse_route_result() != 55053) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_sn_nav_core_checksum_func_route_offline() != 39974) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_sn_nav_core_checksum_func_style_for_navigation() != 19145) {
+    if (uniffi_sn_nav_core_checksum_func_style_for_navigation() != 1673) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_sn_nav_core_checksum_func_style_with_buildings_3d() != 52631) {
+    if (uniffi_sn_nav_core_checksum_func_style_with_buildings_3d() != 4072) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_sn_nav_core_checksum_method_guidancesession_advance_to_next_step() != 26486) {
@@ -4676,6 +7170,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_sn_nav_core_checksum_method_territorymanager_list() != 53484) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_sn_nav_core_checksum_method_territorymanager_open_search() != 38683) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_sn_nav_core_checksum_method_territorymanager_plan_update() != 37073) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -4685,6 +7182,33 @@ private let initializationResult: InitializationResult = {
     if (uniffi_sn_nav_core_checksum_method_territorymanager_set_active() != 38721) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_sn_nav_core_checksum_method_territorymanager_territory_style() != 39484) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_sn_nav_core_checksum_method_territorysearch_reverse() != 17589) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_sn_nav_core_checksum_method_territorysearch_search() != 12388) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_sn_nav_core_checksum_method_probecollector_finish() != 38627) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_sn_nav_core_checksum_method_probecollector_finish_json() != 20547) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_sn_nav_core_checksum_method_probecollector_observe() != 8635) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_sn_nav_core_checksum_method_probecollector_set_route_ref() != 31429) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_sn_nav_core_checksum_method_probecollector_set_territory() != 45090) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_sn_nav_core_checksum_method_probecollector_set_vehicle_class() != 32677) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_sn_nav_core_checksum_method_localrouter_route() != 17998) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -4692,6 +7216,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_sn_nav_core_checksum_constructor_territorymanager_new() != 59206) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_sn_nav_core_checksum_constructor_probecollector_new() != 10026) {
         return InitializationResult.apiChecksumMismatch
     }
 
