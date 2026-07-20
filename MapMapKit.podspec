@@ -1,6 +1,6 @@
 # Template for the MapMapKit CocoaPods podspec (PLATFORM-GOTCHAS.md 1.3).
 #
-# Rendered by .github/workflows/release-ios.yml (0.3.0 substituted per
+# Rendered by .github/workflows/release-ios.yml (0.4.0 substituted per
 # release) and committed to the ROOT of the public distribution repo
 # (Mapmapai/mapmap-ios) so CocoaPods / Expo integrators link the prebuilt
 # binary instead of vendoring the SDK + Valhalla + boost:
@@ -15,7 +15,7 @@
 # and attached to the versioned GitHub release on Mapmapai/mapmap-ios.
 Pod::Spec.new do |s|
   s.name         = 'MapMapKit'
-  s.version      = '0.3.0'
+  s.version      = '0.4.0'
   s.summary      = 'MapMap iOS SDK — fully offline turn-by-turn navigation'
   s.description  = <<-DESC
     Signed offline territory packages, on-device routing, Ferrostar-based
