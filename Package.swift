@@ -30,8 +30,8 @@ let package = Package(
         ),
         .binaryTarget(
             name: "MapMapFFI",
-            url: "https://github.com/Mapmapai/mapmap-ios/releases/download/0.4.0/MapMapFFI.xcframework.zip",
-            checksum: "177a74fe9046e115a59aa20491e528d09669e2ebbb754462ea6db3245eb3ca6d"
+            url: "https://github.com/Mapmapai/mapmap-ios/releases/download/0.5.0/MapMapFFI.xcframework.zip",
+            checksum: "ed4fcd2d7d8f3f0cefce379da47760d5133497f9cf703bb699598d80e6fb54ed"
         ),
     ]
 )
