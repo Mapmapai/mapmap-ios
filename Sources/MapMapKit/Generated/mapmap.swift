@@ -2480,6 +2480,277 @@ public func FfiConverterTypeChangedLayer_lower(_ value: ChangedLayer) -> RustBuf
 
 
 /**
+ * One candidate route for the remaining journey, summarised from the
+ * router's response (a primary route or an alternate).
+ */
+public struct FasterRouteCandidate: Equatable, Hashable {
+    /**
+     * Opaque identifier for the candidate (e.g. the response `id` or an
+     * alternate index), echoed back so the platform can find the route
+     * to switch to. Not interpreted by the evaluator.
+     */
+    public var id: String?
+    /**
+     * The candidate's estimated duration in seconds for the remaining
+     * journey, from the same response baseline as the current-route
+     * remaining ETA (recompute both from one response to avoid drift).
+     */
+    public var durationS: Double
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Opaque identifier for the candidate (e.g. the response `id` or an
+         * alternate index), echoed back so the platform can find the route
+         * to switch to. Not interpreted by the evaluator.
+         */id: String?, 
+        /**
+         * The candidate's estimated duration in seconds for the remaining
+         * journey, from the same response baseline as the current-route
+         * remaining ETA (recompute both from one response to avoid drift).
+         */durationS: Double) {
+        self.id = id
+        self.durationS = durationS
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension FasterRouteCandidate: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeFasterRouteCandidate: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> FasterRouteCandidate {
+        return
+            try FasterRouteCandidate(
+                id: FfiConverterOptionString.read(from: &buf), 
+                durationS: FfiConverterDouble.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: FasterRouteCandidate, into buf: inout [UInt8]) {
+        FfiConverterOptionString.write(value.id, into: &buf)
+        FfiConverterDouble.write(value.durationS, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeFasterRouteCandidate_lift(_ buf: RustBuffer) throws -> FasterRouteCandidate {
+    return try FfiConverterTypeFasterRouteCandidate.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeFasterRouteCandidate_lower(_ value: FasterRouteCandidate) -> RustBuffer {
+    return FfiConverterTypeFasterRouteCandidate.lower(value)
+}
+
+
+/**
+ * Faster-route evaluator configuration, flattened for FFI like
+ * [`crate::reroute::RerouteConfig`].
+ */
+public struct FasterRouteConfig: Equatable, Hashable {
+    /**
+     * Seconds between checks. A check becomes due once this much time has
+     * elapsed since the last evaluation (or since the first observation).
+     */
+    public var checkIntervalS: Double
+    /**
+     * Minimum absolute saving in seconds. Candidates saving less are
+     * never recommended.
+     */
+    public var minSavingS: UInt32
+    /**
+     * Minimum saving as a fraction of the current remaining time (0..1).
+     * Both this and `min_saving_s` must pass.
+     */
+    public var minSavingFrac: Double
+    /**
+     * Seconds a dismissal suppresses further recommendations. Within the
+     * window only a saving at least double the dismissed one re-prompts.
+     */
+    public var dismissSuppressS: Double
+    /**
+     * Seconds-to-next-manoeuvre under which a due check is deferred; the
+     * check fires on the first observation clear of the blackout.
+     */
+    public var maneuverBlackoutS: Double
+    /**
+     * Whether the evaluator is active at all. When `false`, checks are
+     * never due and evaluations never recommend.
+     */
+    public var enabled: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Seconds between checks. A check becomes due once this much time has
+         * elapsed since the last evaluation (or since the first observation).
+         */checkIntervalS: Double = Double(120.0), 
+        /**
+         * Minimum absolute saving in seconds. Candidates saving less are
+         * never recommended.
+         */minSavingS: UInt32 = UInt32(180), 
+        /**
+         * Minimum saving as a fraction of the current remaining time (0..1).
+         * Both this and `min_saving_s` must pass.
+         */minSavingFrac: Double = Double(0.08), 
+        /**
+         * Seconds a dismissal suppresses further recommendations. Within the
+         * window only a saving at least double the dismissed one re-prompts.
+         */dismissSuppressS: Double = Double(600.0), 
+        /**
+         * Seconds-to-next-manoeuvre under which a due check is deferred; the
+         * check fires on the first observation clear of the blackout.
+         */maneuverBlackoutS: Double = Double(60.0), 
+        /**
+         * Whether the evaluator is active at all. When `false`, checks are
+         * never due and evaluations never recommend.
+         */enabled: Bool = true) {
+        self.checkIntervalS = checkIntervalS
+        self.minSavingS = minSavingS
+        self.minSavingFrac = minSavingFrac
+        self.dismissSuppressS = dismissSuppressS
+        self.maneuverBlackoutS = maneuverBlackoutS
+        self.enabled = enabled
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension FasterRouteConfig: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeFasterRouteConfig: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> FasterRouteConfig {
+        return
+            try FasterRouteConfig(
+                checkIntervalS: FfiConverterDouble.read(from: &buf), 
+                minSavingS: FfiConverterUInt32.read(from: &buf), 
+                minSavingFrac: FfiConverterDouble.read(from: &buf), 
+                dismissSuppressS: FfiConverterDouble.read(from: &buf), 
+                maneuverBlackoutS: FfiConverterDouble.read(from: &buf), 
+                enabled: FfiConverterBool.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: FasterRouteConfig, into buf: inout [UInt8]) {
+        FfiConverterDouble.write(value.checkIntervalS, into: &buf)
+        FfiConverterUInt32.write(value.minSavingS, into: &buf)
+        FfiConverterDouble.write(value.minSavingFrac, into: &buf)
+        FfiConverterDouble.write(value.dismissSuppressS, into: &buf)
+        FfiConverterDouble.write(value.maneuverBlackoutS, into: &buf)
+        FfiConverterBool.write(value.enabled, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeFasterRouteConfig_lift(_ buf: RustBuffer) throws -> FasterRouteConfig {
+    return try FfiConverterTypeFasterRouteConfig.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeFasterRouteConfig_lower(_ value: FasterRouteConfig) -> RustBuffer {
+    return FfiConverterTypeFasterRouteConfig.lower(value)
+}
+
+
+/**
+ * A recommendation to switch to a faster candidate route.
+ */
+public struct FasterRouteRecommendation: Equatable, Hashable {
+    /**
+     * Estimated saving in seconds versus staying on the current route.
+     */
+    public var savesS: UInt32
+    /**
+     * Index into the candidate slice passed to
+     * [`FasterRouteEvaluator::evaluate`] of the winning candidate.
+     */
+    public var candidateIdx: UInt32
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Estimated saving in seconds versus staying on the current route.
+         */savesS: UInt32, 
+        /**
+         * Index into the candidate slice passed to
+         * [`FasterRouteEvaluator::evaluate`] of the winning candidate.
+         */candidateIdx: UInt32) {
+        self.savesS = savesS
+        self.candidateIdx = candidateIdx
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension FasterRouteRecommendation: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeFasterRouteRecommendation: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> FasterRouteRecommendation {
+        return
+            try FasterRouteRecommendation(
+                savesS: FfiConverterUInt32.read(from: &buf), 
+                candidateIdx: FfiConverterUInt32.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: FasterRouteRecommendation, into buf: inout [UInt8]) {
+        FfiConverterUInt32.write(value.savesS, into: &buf)
+        FfiConverterUInt32.write(value.candidateIdx, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeFasterRouteRecommendation_lift(_ buf: RustBuffer) throws -> FasterRouteRecommendation {
+    return try FfiConverterTypeFasterRouteRecommendation.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeFasterRouteRecommendation_lower(_ value: FasterRouteRecommendation) -> RustBuffer {
+    return FfiConverterTypeFasterRouteRecommendation.lower(value)
+}
+
+
+/**
  * Guidance behaviour configuration, flattened for FFI.
  *
  * Maps onto Ferrostar's `NavigationControllerConfig`: a
@@ -6031,6 +6302,17 @@ public enum RerouteReason: Equatable, Hashable {
          * Deviation from the route line in metres.
          */deviationM: Double
     )
+    /**
+     * A periodic re-evaluation found a faster route for the remaining
+     * journey (see [`crate::faster_route::FasterRouteEvaluator`]); the
+     * driver accepted the switch. `saves_s` is the estimated saving in
+     * seconds versus staying on the current route.
+     */
+    case fasterRoute(
+        /**
+         * Estimated saving in seconds versus the current route.
+         */savesS: UInt32
+    )
 
 
 
@@ -6055,6 +6337,9 @@ public struct FfiConverterTypeRerouteReason: FfiConverterRustBuffer {
         case 1: return .offRoute(deviationM: try FfiConverterDouble.read(from: &buf)
         )
         
+        case 2: return .fasterRoute(savesS: try FfiConverterUInt32.read(from: &buf)
+        )
+        
         default: throw UniffiInternalError.unexpectedEnumCase
         }
     }
@@ -6066,6 +6351,11 @@ public struct FfiConverterTypeRerouteReason: FfiConverterRustBuffer {
         case let .offRoute(deviationM):
             writeInt(&buf, Int32(1))
             FfiConverterDouble.write(deviationM, into: &buf)
+            
+        
+        case let .fasterRoute(savesS):
+            writeInt(&buf, Int32(2))
+            FfiConverterUInt32.write(savesS, into: &buf)
             
         }
     }
