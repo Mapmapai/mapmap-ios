@@ -608,6 +608,195 @@ fileprivate struct FfiConverterString: FfiConverter {
 
 
 /**
+ * A cancellation handle for an in-flight territory install or update.
+ *
+ * The install calls on [`TerritoryManager`] block the calling thread for
+ * as long as a multi-gigabyte package takes to download, unpack and
+ * verify. Create a token, pass it to one of the `_cancellable` variants
+ * running on a background thread, and call [`CancelToken::cancel`] from
+ * the UI thread when the user taps Cancel. The install polls it at safe
+ * points and returns [`InstallOutcome::Cancelled`] /
+ * [`UpdateOutcome::Cancelled`] with its staging directory removed: no
+ * partial package is left on disk, the previously installed version is
+ * untouched, and layers that had already been verified stay in the
+ * resumable cache for the next attempt. Cancelling after the call has
+ * returned changes nothing.
+ *
+ * The token cannot interrupt a [`LayerFetcher`] blocked in a transfer:
+ * give the fetcher the same token and have it poll
+ * [`CancelToken::is_cancelled`] between chunks (or abort its request when
+ * the app cancels). Whatever the fetcher then returns, the install
+ * reports `Cancelled`, not a transport error.
+ */
+public protocol CancelTokenProtocol: AnyObject, Sendable {
+    
+    /**
+     * Request cancellation. Idempotent and safe from any thread.
+     */
+    func cancel() 
+    
+    /**
+     * Whether [`Self::cancel`] has been called.
+     */
+    func isCancelled()  -> Bool
+    
+}
+/**
+ * A cancellation handle for an in-flight territory install or update.
+ *
+ * The install calls on [`TerritoryManager`] block the calling thread for
+ * as long as a multi-gigabyte package takes to download, unpack and
+ * verify. Create a token, pass it to one of the `_cancellable` variants
+ * running on a background thread, and call [`CancelToken::cancel`] from
+ * the UI thread when the user taps Cancel. The install polls it at safe
+ * points and returns [`InstallOutcome::Cancelled`] /
+ * [`UpdateOutcome::Cancelled`] with its staging directory removed: no
+ * partial package is left on disk, the previously installed version is
+ * untouched, and layers that had already been verified stay in the
+ * resumable cache for the next attempt. Cancelling after the call has
+ * returned changes nothing.
+ *
+ * The token cannot interrupt a [`LayerFetcher`] blocked in a transfer:
+ * give the fetcher the same token and have it poll
+ * [`CancelToken::is_cancelled`] between chunks (or abort its request when
+ * the app cancels). Whatever the fetcher then returns, the install
+ * reports `Cancelled`, not a transport error.
+ */
+open class CancelToken: CancelTokenProtocol, @unchecked Sendable {
+    fileprivate let handle: UInt64
+
+    /// Used to instantiate a [FFIObject] without an actual handle, for fakes in tests, mostly.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public struct NoHandle {
+        public init() {}
+    }
+
+    // TODO: We'd like this to be `private` but for Swifty reasons,
+    // we can't implement `FfiConverter` without making this `required` and we can't
+    // make it `required` without making it `public`.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    required public init(unsafeFromHandle handle: UInt64) {
+        self.handle = handle
+    }
+
+    // This constructor can be used to instantiate a fake object.
+    // - Parameter noHandle: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
+    //
+    // - Warning:
+    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing handle the FFI lower functions will crash.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public init(noHandle: NoHandle) {
+        self.handle = 0
+    }
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public func uniffiCloneHandle() -> UInt64 {
+        return try! rustCall { uniffi_sn_nav_core_fn_clone_canceltoken(self.handle, $0) }
+    }
+    /**
+     * A fresh, uncancelled token.
+     */
+public convenience init() {
+    let handle =
+        try! rustCall() {
+    uniffi_sn_nav_core_fn_constructor_canceltoken_new($0
+    )
+}
+    self.init(unsafeFromHandle: handle)
+}
+
+    deinit {
+        if handle == 0 {
+            // Mock objects have handle=0 don't try to free them
+            return
+        }
+
+        try! rustCall { uniffi_sn_nav_core_fn_free_canceltoken(handle, $0) }
+    }
+
+    
+
+    
+    /**
+     * Request cancellation. Idempotent and safe from any thread.
+     */
+open func cancel()  {try! rustCall() {
+    uniffi_sn_nav_core_fn_method_canceltoken_cancel(
+            self.uniffiCloneHandle(),$0
+    )
+}
+}
+    
+    /**
+     * Whether [`Self::cancel`] has been called.
+     */
+open func isCancelled() -> Bool  {
+    return try!  FfiConverterBool.lift(try! rustCall() {
+    uniffi_sn_nav_core_fn_method_canceltoken_is_cancelled(
+            self.uniffiCloneHandle(),$0
+    )
+})
+}
+    
+
+    
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeCancelToken: FfiConverter {
+    typealias FfiType = UInt64
+    typealias SwiftType = CancelToken
+
+    public static func lift(_ handle: UInt64) throws -> CancelToken {
+        return CancelToken(unsafeFromHandle: handle)
+    }
+
+    public static func lower(_ value: CancelToken) -> UInt64 {
+        return value.uniffiCloneHandle()
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CancelToken {
+        let handle: UInt64 = try readInt(&buf)
+        return try lift(handle)
+    }
+
+    public static func write(_ value: CancelToken, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCancelToken_lift(_ handle: UInt64) throws -> CancelToken {
+    return try FfiConverterTypeCancelToken.lift(handle)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCancelToken_lower(_ value: CancelToken) -> UInt64 {
+    return FfiConverterTypeCancelToken.lower(value)
+}
+
+
+
+
+
+
+/**
  * A turn-by-turn guidance session (see [`crate::guidance`]).
  *
  * Thread-safe: the mutable Ferrostar navigation state is guarded by a
@@ -1521,9 +1710,34 @@ public protocol TerritoryManagerProtocol: AnyObject, Sendable {
      * Apply a differential update: stage, fetch only the changed layers
      * through `fetcher`, verify everything and swap atomically. Any
      * failure leaves the installed territory untouched; the active flag
-     * is preserved.
+     * is preserved. Blocks until done and cannot be interrupted; see
+     * [`Self::apply_update_cancellable`].
      */
     func applyUpdate(territoryId: String, newManifestJson: String, newManifestSigBase64: String, fetcher: LayerFetcher) throws  -> UpdateResult
+    
+    /**
+     * [`Self::apply_update`] with a [`CancelToken`]. Polled before every
+     * layer download, between archive entries while unpacking, before
+     * each hash pass and before promotion. A tripped token yields
+     * [`UpdateOutcome::Cancelled`]: the installed version is untouched,
+     * staging is removed, and layers that had already been fetched and
+     * verified stay in the resumable cache, so calling again with the
+     * same manifest re-fetches only what is missing.
+     *
+     * Give `fetcher` the same token so it can stop an in-flight transfer
+     * (the token cannot interrupt foreign code on its own); whatever the
+     * fetcher then returns, a tripped token reports `Cancelled` rather
+     * than a transport error.
+     */
+    func applyUpdateCancellable(territoryId: String, newManifestJson: String, newManifestSigBase64: String, fetcher: LayerFetcher, cancel: CancelToken) throws  -> UpdateOutcome
+    
+    /**
+     * Bytes parked in the resumable layer cache: downloads a failed
+     * install already paid for, which a retry will not pay for again.
+     * Surface this next to a "resume" affordance and in storage
+     * settings.
+     */
+    func cachedLayerBytes() throws  -> UInt64
     
     /**
      * Check the signed channel index for an update to an installed
@@ -1537,15 +1751,91 @@ public protocol TerritoryManagerProtocol: AnyObject, Sendable {
     func checkForUpdate(territoryId: String, indexJson: String, indexSigBase64: String, fetcher: LayerFetcher) throws  -> AvailableUpdate?
     
     /**
-     * Install an unpacked package directory.
+     * Discard every parked layer. The bytes are lost and a later
+     * install re-downloads (and on a metered channel re-pays for) them,
+     * so offer this only as a deliberate "free up space" action.
+     */
+    func clearLayerCache() throws 
+    
+    /**
+     * Install an unpacked package directory. Blocks until done and
+     * cannot be interrupted; see [`Self::install_dir_cancellable`].
      */
     func installDir(packageDir: String) throws  -> TerritoryInfo
     
     /**
+     * [`Self::install_dir`] with a [`CancelToken`]. Polled between
+     * copied files, before verification and before promotion.
+     */
+    func installDirCancellable(packageDir: String, cancel: CancelToken) throws  -> InstallOutcome
+    
+    /**
+     * Install an unpacked package directory, holding only the layers
+     * this app can use: `omit` names the kinds to leave out (e.g.
+     * `Pmtiles` and `Extra("style")` for an app with no map view).
+     *
+     * The install records what it left out, and every later
+     * verification requires those layers to be **absent** rather than
+     * exempting them from hashing, so the record cannot be forged into
+     * admitting tampered bytes. Asking for an omitted layer answers
+     * [`NavCoreError::LayerNotInstalled`], which is not an error state:
+     * it is "you chose not to download this".
+     *
+     * The selection is sticky: updates carry it forward, so an app that
+     * skipped the render layers never downloads them on an update
+     * either.
+     */
+    func installDirPartial(packageDir: String, omit: [MapLayerKind], cancel: CancelToken) throws  -> InstallOutcome
+    
+    /**
+     * Install a territory **from the channel**, downloading only the
+     * layers this app can use.
+     *
+     * The first-install counterpart of [`Self::apply_update`], and the
+     * only path on which omitting layers saves bandwidth: a layer in
+     * `omit` is never requested, so it is never metered and never
+     * stored. `index_json` / `index_sig_base64` are the exact served
+     * bytes of `index.json` and `index.json.sig`; the channel's latest
+     * version of the territory is installed.
+     *
+     * Nothing is trusted but the pinned key: the index signature, the
+     * manifest signature and every blob's BLAKE3 are checked, and the
+     * assembled directory goes through the same full verification pass
+     * as any other install before it is promoted. Interrupted installs
+     * resume: verified layers stay parked in the layer cache.
+     *
+     * Calling it again for a territory that is already installed is how
+     * a selection is widened later. Layers already on the device at the
+     * same content hash are linked, not re-downloaded, so adding the
+     * map to a router-only install costs the map alone.
+     */
+    func installFromChannel(territoryId: String, indexJson: String, indexSigBase64: String, omit: [MapLayerKind], fetcher: LayerFetcher, cancel: CancelToken) throws  -> ChannelInstallOutcome
+    
+    /**
      * Install a packed `.snpkg` archive (verify-then-promote; rejected
-     * packages leave no trace).
+     * packages leave no trace). Blocks until done and cannot be
+     * interrupted; see [`Self::install_snpkg_cancellable`].
      */
     func installSnpkg(archivePath: String) throws  -> TerritoryInfo
+    
+    /**
+     * [`Self::install_snpkg`] with a [`CancelToken`]. Polled between
+     * archive entries, before verification and before promotion; a
+     * tripped token yields [`InstallOutcome::Cancelled`] with staging
+     * removed and nothing installed.
+     */
+    func installSnpkgCancellable(archivePath: String, cancel: CancelToken) throws  -> InstallOutcome
+    
+    /**
+     * [`Self::install_dir_partial`] from a packed `.snpkg` archive.
+     *
+     * The archive carries every layer, so this saves storage, not
+     * bandwidth: the omitted layers are unpacked and then dropped
+     * before verification. For the bandwidth saving use
+     * [`Self::install_from_channel`], which never fetches a blob it
+     * does not want.
+     */
+    func installSnpkgPartial(archivePath: String, omit: [MapLayerKind], cancel: CancelToken) throws  -> InstallOutcome
     
     /**
      * Absolute path of a layer inside an installed territory (e.g. the
@@ -1597,6 +1887,18 @@ public protocol TerritoryManagerProtocol: AnyObject, Sendable {
      * ranges; no offline glyph bundle ships in packages today).
      */
     func territoryStyle(territoryId: String, theme: StyleTheme) throws  -> String
+    
+    /**
+     * Re-verify an installed territory from disk: the manifest
+     * signature, the BLAKE3 of every layer this install holds, and the
+     * absence of every layer it recorded as omitted.
+     *
+     * The ordinary calls do not re-hash gigabytes; this is the
+     * on-demand integrity check for after a restore or a crash. A
+     * failure arrives as [`NavCoreError::Verification`] and means the
+     * install must be repaired or reinstalled, not retried.
+     */
+    func verifyTerritory(territoryId: String) throws  -> TerritoryInfo
     
 }
 /**
@@ -1684,7 +1986,8 @@ open func active()throws  -> String?  {
      * Apply a differential update: stage, fetch only the changed layers
      * through `fetcher`, verify everything and swap atomically. Any
      * failure leaves the installed territory untouched; the active flag
-     * is preserved.
+     * is preserved. Blocks until done and cannot be interrupted; see
+     * [`Self::apply_update_cancellable`].
      */
 open func applyUpdate(territoryId: String, newManifestJson: String, newManifestSigBase64: String, fetcher: LayerFetcher)throws  -> UpdateResult  {
     return try  FfiConverterTypeUpdateResult_lift(try rustCallWithError(FfiConverterTypeNavCoreError_lift) {
@@ -1694,6 +1997,47 @@ open func applyUpdate(territoryId: String, newManifestJson: String, newManifestS
         FfiConverterString.lower(newManifestJson),
         FfiConverterString.lower(newManifestSigBase64),
         FfiConverterTypeLayerFetcher_lower(fetcher),$0
+    )
+})
+}
+    
+    /**
+     * [`Self::apply_update`] with a [`CancelToken`]. Polled before every
+     * layer download, between archive entries while unpacking, before
+     * each hash pass and before promotion. A tripped token yields
+     * [`UpdateOutcome::Cancelled`]: the installed version is untouched,
+     * staging is removed, and layers that had already been fetched and
+     * verified stay in the resumable cache, so calling again with the
+     * same manifest re-fetches only what is missing.
+     *
+     * Give `fetcher` the same token so it can stop an in-flight transfer
+     * (the token cannot interrupt foreign code on its own); whatever the
+     * fetcher then returns, a tripped token reports `Cancelled` rather
+     * than a transport error.
+     */
+open func applyUpdateCancellable(territoryId: String, newManifestJson: String, newManifestSigBase64: String, fetcher: LayerFetcher, cancel: CancelToken)throws  -> UpdateOutcome  {
+    return try  FfiConverterTypeUpdateOutcome_lift(try rustCallWithError(FfiConverterTypeNavCoreError_lift) {
+    uniffi_sn_nav_core_fn_method_territorymanager_apply_update_cancellable(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(territoryId),
+        FfiConverterString.lower(newManifestJson),
+        FfiConverterString.lower(newManifestSigBase64),
+        FfiConverterTypeLayerFetcher_lower(fetcher),
+        FfiConverterTypeCancelToken_lower(cancel),$0
+    )
+})
+}
+    
+    /**
+     * Bytes parked in the resumable layer cache: downloads a failed
+     * install already paid for, which a retry will not pay for again.
+     * Surface this next to a "resume" affordance and in storage
+     * settings.
+     */
+open func cachedLayerBytes()throws  -> UInt64  {
+    return try  FfiConverterUInt64.lift(try rustCallWithError(FfiConverterTypeNavCoreError_lift) {
+    uniffi_sn_nav_core_fn_method_territorymanager_cached_layer_bytes(
+            self.uniffiCloneHandle(),$0
     )
 })
 }
@@ -1720,7 +2064,20 @@ open func checkForUpdate(territoryId: String, indexJson: String, indexSigBase64:
 }
     
     /**
-     * Install an unpacked package directory.
+     * Discard every parked layer. The bytes are lost and a later
+     * install re-downloads (and on a metered channel re-pays for) them,
+     * so offer this only as a deliberate "free up space" action.
+     */
+open func clearLayerCache()throws   {try rustCallWithError(FfiConverterTypeNavCoreError_lift) {
+    uniffi_sn_nav_core_fn_method_territorymanager_clear_layer_cache(
+            self.uniffiCloneHandle(),$0
+    )
+}
+}
+    
+    /**
+     * Install an unpacked package directory. Blocks until done and
+     * cannot be interrupted; see [`Self::install_dir_cancellable`].
      */
 open func installDir(packageDir: String)throws  -> TerritoryInfo  {
     return try  FfiConverterTypeTerritoryInfo_lift(try rustCallWithError(FfiConverterTypeNavCoreError_lift) {
@@ -1732,14 +2089,128 @@ open func installDir(packageDir: String)throws  -> TerritoryInfo  {
 }
     
     /**
+     * [`Self::install_dir`] with a [`CancelToken`]. Polled between
+     * copied files, before verification and before promotion.
+     */
+open func installDirCancellable(packageDir: String, cancel: CancelToken)throws  -> InstallOutcome  {
+    return try  FfiConverterTypeInstallOutcome_lift(try rustCallWithError(FfiConverterTypeNavCoreError_lift) {
+    uniffi_sn_nav_core_fn_method_territorymanager_install_dir_cancellable(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(packageDir),
+        FfiConverterTypeCancelToken_lower(cancel),$0
+    )
+})
+}
+    
+    /**
+     * Install an unpacked package directory, holding only the layers
+     * this app can use: `omit` names the kinds to leave out (e.g.
+     * `Pmtiles` and `Extra("style")` for an app with no map view).
+     *
+     * The install records what it left out, and every later
+     * verification requires those layers to be **absent** rather than
+     * exempting them from hashing, so the record cannot be forged into
+     * admitting tampered bytes. Asking for an omitted layer answers
+     * [`NavCoreError::LayerNotInstalled`], which is not an error state:
+     * it is "you chose not to download this".
+     *
+     * The selection is sticky: updates carry it forward, so an app that
+     * skipped the render layers never downloads them on an update
+     * either.
+     */
+open func installDirPartial(packageDir: String, omit: [MapLayerKind], cancel: CancelToken)throws  -> InstallOutcome  {
+    return try  FfiConverterTypeInstallOutcome_lift(try rustCallWithError(FfiConverterTypeNavCoreError_lift) {
+    uniffi_sn_nav_core_fn_method_territorymanager_install_dir_partial(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(packageDir),
+        FfiConverterSequenceTypeMapLayerKind.lower(omit),
+        FfiConverterTypeCancelToken_lower(cancel),$0
+    )
+})
+}
+    
+    /**
+     * Install a territory **from the channel**, downloading only the
+     * layers this app can use.
+     *
+     * The first-install counterpart of [`Self::apply_update`], and the
+     * only path on which omitting layers saves bandwidth: a layer in
+     * `omit` is never requested, so it is never metered and never
+     * stored. `index_json` / `index_sig_base64` are the exact served
+     * bytes of `index.json` and `index.json.sig`; the channel's latest
+     * version of the territory is installed.
+     *
+     * Nothing is trusted but the pinned key: the index signature, the
+     * manifest signature and every blob's BLAKE3 are checked, and the
+     * assembled directory goes through the same full verification pass
+     * as any other install before it is promoted. Interrupted installs
+     * resume: verified layers stay parked in the layer cache.
+     *
+     * Calling it again for a territory that is already installed is how
+     * a selection is widened later. Layers already on the device at the
+     * same content hash are linked, not re-downloaded, so adding the
+     * map to a router-only install costs the map alone.
+     */
+open func installFromChannel(territoryId: String, indexJson: String, indexSigBase64: String, omit: [MapLayerKind], fetcher: LayerFetcher, cancel: CancelToken)throws  -> ChannelInstallOutcome  {
+    return try  FfiConverterTypeChannelInstallOutcome_lift(try rustCallWithError(FfiConverterTypeNavCoreError_lift) {
+    uniffi_sn_nav_core_fn_method_territorymanager_install_from_channel(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(territoryId),
+        FfiConverterString.lower(indexJson),
+        FfiConverterString.lower(indexSigBase64),
+        FfiConverterSequenceTypeMapLayerKind.lower(omit),
+        FfiConverterTypeLayerFetcher_lower(fetcher),
+        FfiConverterTypeCancelToken_lower(cancel),$0
+    )
+})
+}
+    
+    /**
      * Install a packed `.snpkg` archive (verify-then-promote; rejected
-     * packages leave no trace).
+     * packages leave no trace). Blocks until done and cannot be
+     * interrupted; see [`Self::install_snpkg_cancellable`].
      */
 open func installSnpkg(archivePath: String)throws  -> TerritoryInfo  {
     return try  FfiConverterTypeTerritoryInfo_lift(try rustCallWithError(FfiConverterTypeNavCoreError_lift) {
     uniffi_sn_nav_core_fn_method_territorymanager_install_snpkg(
             self.uniffiCloneHandle(),
         FfiConverterString.lower(archivePath),$0
+    )
+})
+}
+    
+    /**
+     * [`Self::install_snpkg`] with a [`CancelToken`]. Polled between
+     * archive entries, before verification and before promotion; a
+     * tripped token yields [`InstallOutcome::Cancelled`] with staging
+     * removed and nothing installed.
+     */
+open func installSnpkgCancellable(archivePath: String, cancel: CancelToken)throws  -> InstallOutcome  {
+    return try  FfiConverterTypeInstallOutcome_lift(try rustCallWithError(FfiConverterTypeNavCoreError_lift) {
+    uniffi_sn_nav_core_fn_method_territorymanager_install_snpkg_cancellable(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(archivePath),
+        FfiConverterTypeCancelToken_lower(cancel),$0
+    )
+})
+}
+    
+    /**
+     * [`Self::install_dir_partial`] from a packed `.snpkg` archive.
+     *
+     * The archive carries every layer, so this saves storage, not
+     * bandwidth: the omitted layers are unpacked and then dropped
+     * before verification. For the bandwidth saving use
+     * [`Self::install_from_channel`], which never fetches a blob it
+     * does not want.
+     */
+open func installSnpkgPartial(archivePath: String, omit: [MapLayerKind], cancel: CancelToken)throws  -> InstallOutcome  {
+    return try  FfiConverterTypeInstallOutcome_lift(try rustCallWithError(FfiConverterTypeNavCoreError_lift) {
+    uniffi_sn_nav_core_fn_method_territorymanager_install_snpkg_partial(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(archivePath),
+        FfiConverterSequenceTypeMapLayerKind.lower(omit),
+        FfiConverterTypeCancelToken_lower(cancel),$0
     )
 })
 }
@@ -1839,6 +2310,25 @@ open func territoryStyle(territoryId: String, theme: StyleTheme)throws  -> Strin
             self.uniffiCloneHandle(),
         FfiConverterString.lower(territoryId),
         FfiConverterTypeStyleTheme_lower(theme),$0
+    )
+})
+}
+    
+    /**
+     * Re-verify an installed territory from disk: the manifest
+     * signature, the BLAKE3 of every layer this install holds, and the
+     * absence of every layer it recorded as omitted.
+     *
+     * The ordinary calls do not re-hash gigabytes; this is the
+     * on-demand integrity check for after a restore or a crash. A
+     * failure arrives as [`NavCoreError::Verification`] and means the
+     * install must be repaired or reinstalled, not retried.
+     */
+open func verifyTerritory(territoryId: String)throws  -> TerritoryInfo  {
+    return try  FfiConverterTypeTerritoryInfo_lift(try rustCallWithError(FfiConverterTypeNavCoreError_lift) {
+    uniffi_sn_nav_core_fn_method_territorymanager_verify_territory(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(territoryId),$0
     )
 })
 }
@@ -2203,9 +2693,10 @@ public struct AvailableUpdate: Equatable, Hashable {
      */
     public var changedLayers: [ChangedLayer]
     /**
-     * Total manifest bytes of the changed layers (download estimate).
+     * **Uncompressed** total of the changed layers — on-device disk, not
+     * metered wire bytes. Same warning as [`UpdatePlan::installed_bytes`].
      */
-    public var downloadBytes: UInt64
+    public var installedBytes: UInt64
     /**
      * The remote manifest's exact JSON text; pass verbatim to
      * [`TerritoryManager::apply_update`].
@@ -2226,8 +2717,9 @@ public struct AvailableUpdate: Equatable, Hashable {
          * Layers that must be downloaded.
          */changedLayers: [ChangedLayer], 
         /**
-         * Total manifest bytes of the changed layers (download estimate).
-         */downloadBytes: UInt64, 
+         * **Uncompressed** total of the changed layers — on-device disk, not
+         * metered wire bytes. Same warning as [`UpdatePlan::installed_bytes`].
+         */installedBytes: UInt64, 
         /**
          * The remote manifest's exact JSON text; pass verbatim to
          * [`TerritoryManager::apply_update`].
@@ -2237,7 +2729,7 @@ public struct AvailableUpdate: Equatable, Hashable {
          */manifestSig: String) {
         self.version = version
         self.changedLayers = changedLayers
-        self.downloadBytes = downloadBytes
+        self.installedBytes = installedBytes
         self.manifestJson = manifestJson
         self.manifestSig = manifestSig
     }
@@ -2260,7 +2752,7 @@ public struct FfiConverterTypeAvailableUpdate: FfiConverterRustBuffer {
             try AvailableUpdate(
                 version: FfiConverterString.read(from: &buf), 
                 changedLayers: FfiConverterSequenceTypeChangedLayer.read(from: &buf), 
-                downloadBytes: FfiConverterUInt64.read(from: &buf), 
+                installedBytes: FfiConverterUInt64.read(from: &buf), 
                 manifestJson: FfiConverterString.read(from: &buf), 
                 manifestSig: FfiConverterString.read(from: &buf)
         )
@@ -2269,7 +2761,7 @@ public struct FfiConverterTypeAvailableUpdate: FfiConverterRustBuffer {
     public static func write(_ value: AvailableUpdate, into buf: inout [UInt8]) {
         FfiConverterString.write(value.version, into: &buf)
         FfiConverterSequenceTypeChangedLayer.write(value.changedLayers, into: &buf)
-        FfiConverterUInt64.write(value.downloadBytes, into: &buf)
+        FfiConverterUInt64.write(value.installedBytes, into: &buf)
         FfiConverterString.write(value.manifestJson, into: &buf)
         FfiConverterString.write(value.manifestSig, into: &buf)
     }
@@ -2476,6 +2968,103 @@ public func FfiConverterTypeChangedLayer_lift(_ buf: RustBuffer) throws -> Chang
 #endif
 public func FfiConverterTypeChangedLayer_lower(_ value: ChangedLayer) -> RustBuffer {
     return FfiConverterTypeChangedLayer.lower(value)
+}
+
+
+/**
+ * What [`TerritoryManager::install_from_channel`] did.
+ */
+public struct ChannelInstallResult: Equatable, Hashable {
+    /**
+     * The installed territory.
+     */
+    public var territory: TerritoryInfo
+    /**
+     * How many layer blobs were downloaded on this attempt.
+     */
+    public var layersFetched: UInt32
+    /**
+     * How many layers cost nothing: already on the device at the same
+     * content hash, or parked by an attempt that failed before it could
+     * promote.
+     */
+    public var layersReused: UInt32
+    /**
+     * Bytes downloaded on this attempt. Compressed blob bytes on the
+     * wire, so directly comparable with a metering allowance, unlike
+     * `installedBytes`, which is uncompressed disk.
+     */
+    public var bytesDownloaded: UInt64
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * The installed territory.
+         */territory: TerritoryInfo, 
+        /**
+         * How many layer blobs were downloaded on this attempt.
+         */layersFetched: UInt32, 
+        /**
+         * How many layers cost nothing: already on the device at the same
+         * content hash, or parked by an attempt that failed before it could
+         * promote.
+         */layersReused: UInt32, 
+        /**
+         * Bytes downloaded on this attempt. Compressed blob bytes on the
+         * wire, so directly comparable with a metering allowance, unlike
+         * `installedBytes`, which is uncompressed disk.
+         */bytesDownloaded: UInt64) {
+        self.territory = territory
+        self.layersFetched = layersFetched
+        self.layersReused = layersReused
+        self.bytesDownloaded = bytesDownloaded
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension ChannelInstallResult: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeChannelInstallResult: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ChannelInstallResult {
+        return
+            try ChannelInstallResult(
+                territory: FfiConverterTypeTerritoryInfo.read(from: &buf), 
+                layersFetched: FfiConverterUInt32.read(from: &buf), 
+                layersReused: FfiConverterUInt32.read(from: &buf), 
+                bytesDownloaded: FfiConverterUInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: ChannelInstallResult, into buf: inout [UInt8]) {
+        FfiConverterTypeTerritoryInfo.write(value.territory, into: &buf)
+        FfiConverterUInt32.write(value.layersFetched, into: &buf)
+        FfiConverterUInt32.write(value.layersReused, into: &buf)
+        FfiConverterUInt64.write(value.bytesDownloaded, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeChannelInstallResult_lift(_ buf: RustBuffer) throws -> ChannelInstallResult {
+    return try FfiConverterTypeChannelInstallResult.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeChannelInstallResult_lower(_ value: ChannelInstallResult) -> RustBuffer {
+    return FfiConverterTypeChannelInstallResult.lower(value)
 }
 
 
@@ -4590,9 +5179,23 @@ public struct TerritoryInfo: Equatable, Hashable {
      */
     public var north: Double
     /**
-     * Total size of all layers in bytes.
+     * Total size of all layers in the **published package**, in bytes,
+     * whether or not this install holds them.
      */
     public var totalBytes: UInt64
+    /**
+     * Size of the layers this install actually holds, in bytes. Equal
+     * to [`Self::total_bytes`] for a complete install; smaller when
+     * layers were deliberately left out. This is the disk figure to
+     * show in a storage list.
+     */
+    public var installedBytes: UInt64
+    /**
+     * Layer kinds the package has and this install deliberately does
+     * **not** hold. Empty for an ordinary complete install. Asking for
+     * one of these yields [`NavCoreError::LayerNotInstalled`].
+     */
+    public var omittedKinds: [MapLayerKind]
     /**
      * Absolute path of the installed package directory.
      */
@@ -4630,8 +5233,20 @@ public struct TerritoryInfo: Equatable, Hashable {
          * Bounding box north edge (degrees).
          */north: Double, 
         /**
-         * Total size of all layers in bytes.
+         * Total size of all layers in the **published package**, in bytes,
+         * whether or not this install holds them.
          */totalBytes: UInt64, 
+        /**
+         * Size of the layers this install actually holds, in bytes. Equal
+         * to [`Self::total_bytes`] for a complete install; smaller when
+         * layers were deliberately left out. This is the disk figure to
+         * show in a storage list.
+         */installedBytes: UInt64, 
+        /**
+         * Layer kinds the package has and this install deliberately does
+         * **not** hold. Empty for an ordinary complete install. Asking for
+         * one of these yields [`NavCoreError::LayerNotInstalled`].
+         */omittedKinds: [MapLayerKind], 
         /**
          * Absolute path of the installed package directory.
          */path: String, 
@@ -4647,6 +5262,8 @@ public struct TerritoryInfo: Equatable, Hashable {
         self.east = east
         self.north = north
         self.totalBytes = totalBytes
+        self.installedBytes = installedBytes
+        self.omittedKinds = omittedKinds
         self.path = path
         self.active = active
     }
@@ -4676,6 +5293,8 @@ public struct FfiConverterTypeTerritoryInfo: FfiConverterRustBuffer {
                 east: FfiConverterDouble.read(from: &buf), 
                 north: FfiConverterDouble.read(from: &buf), 
                 totalBytes: FfiConverterUInt64.read(from: &buf), 
+                installedBytes: FfiConverterUInt64.read(from: &buf), 
+                omittedKinds: FfiConverterSequenceTypeMapLayerKind.read(from: &buf), 
                 path: FfiConverterString.read(from: &buf), 
                 active: FfiConverterBool.read(from: &buf)
         )
@@ -4691,6 +5310,8 @@ public struct FfiConverterTypeTerritoryInfo: FfiConverterRustBuffer {
         FfiConverterDouble.write(value.east, into: &buf)
         FfiConverterDouble.write(value.north, into: &buf)
         FfiConverterUInt64.write(value.totalBytes, into: &buf)
+        FfiConverterUInt64.write(value.installedBytes, into: &buf)
+        FfiConverterSequenceTypeMapLayerKind.write(value.omittedKinds, into: &buf)
         FfiConverterString.write(value.path, into: &buf)
         FfiConverterBool.write(value.active, into: &buf)
     }
@@ -4721,9 +5342,13 @@ public struct UpdatePlan: Equatable, Hashable {
      */
     public var changed: [ChangedLayer]
     /**
-     * Total bytes to transfer.
+     * **Uncompressed** total of the changed layers: the disk the update
+     * adds on the device, not the bytes that cross the wire. Layers
+     * travel `tar + zstd`, so this overstates metered transfer for
+     * everything except PMTiles (already internally gzipped) — do not
+     * build a download-cost prompt from it.
      */
-    public var totalBytes: UInt64
+    public var installedBytes: UInt64
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
@@ -4732,10 +5357,14 @@ public struct UpdatePlan: Equatable, Hashable {
          * Layers that must be downloaded.
          */changed: [ChangedLayer], 
         /**
-         * Total bytes to transfer.
-         */totalBytes: UInt64) {
+         * **Uncompressed** total of the changed layers: the disk the update
+         * adds on the device, not the bytes that cross the wire. Layers
+         * travel `tar + zstd`, so this overstates metered transfer for
+         * everything except PMTiles (already internally gzipped) — do not
+         * build a download-cost prompt from it.
+         */installedBytes: UInt64) {
         self.changed = changed
-        self.totalBytes = totalBytes
+        self.installedBytes = installedBytes
     }
 
     
@@ -4755,13 +5384,13 @@ public struct FfiConverterTypeUpdatePlan: FfiConverterRustBuffer {
         return
             try UpdatePlan(
                 changed: FfiConverterSequenceTypeChangedLayer.read(from: &buf), 
-                totalBytes: FfiConverterUInt64.read(from: &buf)
+                installedBytes: FfiConverterUInt64.read(from: &buf)
         )
     }
 
     public static func write(_ value: UpdatePlan, into buf: inout [UInt8]) {
         FfiConverterSequenceTypeChangedLayer.write(value.changed, into: &buf)
-        FfiConverterUInt64.write(value.totalBytes, into: &buf)
+        FfiConverterUInt64.write(value.installedBytes, into: &buf)
     }
 }
 
@@ -4794,11 +5423,18 @@ public struct UpdateResult: Equatable, Hashable {
      */
     public var previousVersion: String
     /**
-     * How many layer blobs were downloaded.
+     * How many layer blobs were downloaded on this attempt.
      */
     public var layersFetched: UInt32
     /**
-     * Total bytes downloaded (compressed blob bytes on the wire).
+     * How many changed layers were served from the resumable layer
+     * cache, having been fetched and verified by an earlier attempt
+     * that failed before it could promote.
+     */
+    public var layersReused: UInt32
+    /**
+     * Bytes downloaded on this attempt (compressed blob bytes on the
+     * wire, so directly comparable with a metered allowance).
      */
     public var bytesDownloaded: UInt64
 
@@ -4812,14 +5448,21 @@ public struct UpdateResult: Equatable, Hashable {
          * The version that was installed before the update.
          */previousVersion: String, 
         /**
-         * How many layer blobs were downloaded.
+         * How many layer blobs were downloaded on this attempt.
          */layersFetched: UInt32, 
         /**
-         * Total bytes downloaded (compressed blob bytes on the wire).
+         * How many changed layers were served from the resumable layer
+         * cache, having been fetched and verified by an earlier attempt
+         * that failed before it could promote.
+         */layersReused: UInt32, 
+        /**
+         * Bytes downloaded on this attempt (compressed blob bytes on the
+         * wire, so directly comparable with a metered allowance).
          */bytesDownloaded: UInt64) {
         self.territory = territory
         self.previousVersion = previousVersion
         self.layersFetched = layersFetched
+        self.layersReused = layersReused
         self.bytesDownloaded = bytesDownloaded
     }
 
@@ -4842,6 +5485,7 @@ public struct FfiConverterTypeUpdateResult: FfiConverterRustBuffer {
                 territory: FfiConverterTypeTerritoryInfo.read(from: &buf), 
                 previousVersion: FfiConverterString.read(from: &buf), 
                 layersFetched: FfiConverterUInt32.read(from: &buf), 
+                layersReused: FfiConverterUInt32.read(from: &buf), 
                 bytesDownloaded: FfiConverterUInt64.read(from: &buf)
         )
     }
@@ -4850,6 +5494,7 @@ public struct FfiConverterTypeUpdateResult: FfiConverterRustBuffer {
         FfiConverterTypeTerritoryInfo.write(value.territory, into: &buf)
         FfiConverterString.write(value.previousVersion, into: &buf)
         FfiConverterUInt32.write(value.layersFetched, into: &buf)
+        FfiConverterUInt32.write(value.layersReused, into: &buf)
         FfiConverterUInt64.write(value.bytesDownloaded, into: &buf)
     }
 }
@@ -4890,6 +5535,43 @@ public struct VisualBanner: Equatable, Hashable {
      * Metres before the maneuver at which to start displaying.
      */
     public var triggerDistanceM: Double
+    /**
+     * The side of the road traffic drives on at the manoeuvre this banner
+     * describes: `"left"` (UK-style left-hand traffic, where roundabouts
+     * circulate clockwise) or `"right"`. `None` when the engine does not
+     * establish it for that manoeuvre: the route translation sets it on
+     * roundabout enter/exit and u-turn steps only (see
+     * `sn_valhalla::translate`). Icon mappings read it to pick the
+     * roundabout circulation and the u-turn arm, and must draw a plain
+     * glyph rather than guess when it is `None`.
+     */
+    public var drivingSide: String?
+    /**
+     * The route number(s) of the road the manoeuvre this banner describes
+     * leads onto, exactly as the engine reports them on that manoeuvre
+     * (`is_route_number` names only, `"; "` separated, e.g. `"A27"` or
+     * `"I 5; US 101"`; see `sn_valhalla::valhalla::Maneuver::ref_`).
+     * `None` when the road carries none or the route came without the
+     * gateway's road fields: a road-number badge is drawn only from this,
+     * never inferred from a street name.
+     */
+    public var roadRef: String?
+    /**
+     * ISO 3166-1 alpha-2 country of that road (e.g. `"GB"`), from the
+     * engine's admin data; picks the country's road-number badge forms.
+     */
+    public var country: String?
+    /**
+     * ISO 3166-2 subdivision of that road (e.g. `"US-CA"`, `"CA-QC"`)
+     * where the map carries one; some badge tiers apply in one
+     * subdivision only.
+     */
+    public var subdivision: String?
+    /**
+     * Engine road class of that road (`motorway`, `trunk`, `primary`,
+     * ...); the GB primary-route badge (green) needs `trunk`.
+     */
+    public var roadClass: String?
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
@@ -4905,11 +5587,48 @@ public struct VisualBanner: Equatable, Hashable {
          */sub: BannerLine?, 
         /**
          * Metres before the maneuver at which to start displaying.
-         */triggerDistanceM: Double) {
+         */triggerDistanceM: Double, 
+        /**
+         * The side of the road traffic drives on at the manoeuvre this banner
+         * describes: `"left"` (UK-style left-hand traffic, where roundabouts
+         * circulate clockwise) or `"right"`. `None` when the engine does not
+         * establish it for that manoeuvre: the route translation sets it on
+         * roundabout enter/exit and u-turn steps only (see
+         * `sn_valhalla::translate`). Icon mappings read it to pick the
+         * roundabout circulation and the u-turn arm, and must draw a plain
+         * glyph rather than guess when it is `None`.
+         */drivingSide: String? = nil, 
+        /**
+         * The route number(s) of the road the manoeuvre this banner describes
+         * leads onto, exactly as the engine reports them on that manoeuvre
+         * (`is_route_number` names only, `"; "` separated, e.g. `"A27"` or
+         * `"I 5; US 101"`; see `sn_valhalla::valhalla::Maneuver::ref_`).
+         * `None` when the road carries none or the route came without the
+         * gateway's road fields: a road-number badge is drawn only from this,
+         * never inferred from a street name.
+         */roadRef: String? = nil, 
+        /**
+         * ISO 3166-1 alpha-2 country of that road (e.g. `"GB"`), from the
+         * engine's admin data; picks the country's road-number badge forms.
+         */country: String? = nil, 
+        /**
+         * ISO 3166-2 subdivision of that road (e.g. `"US-CA"`, `"CA-QC"`)
+         * where the map carries one; some badge tiers apply in one
+         * subdivision only.
+         */subdivision: String? = nil, 
+        /**
+         * Engine road class of that road (`motorway`, `trunk`, `primary`,
+         * ...); the GB primary-route badge (green) needs `trunk`.
+         */roadClass: String? = nil) {
         self.primary = primary
         self.secondary = secondary
         self.sub = sub
         self.triggerDistanceM = triggerDistanceM
+        self.drivingSide = drivingSide
+        self.roadRef = roadRef
+        self.country = country
+        self.subdivision = subdivision
+        self.roadClass = roadClass
     }
 
     
@@ -4931,7 +5650,12 @@ public struct FfiConverterTypeVisualBanner: FfiConverterRustBuffer {
                 primary: FfiConverterTypeBannerLine.read(from: &buf), 
                 secondary: FfiConverterOptionTypeBannerLine.read(from: &buf), 
                 sub: FfiConverterOptionTypeBannerLine.read(from: &buf), 
-                triggerDistanceM: FfiConverterDouble.read(from: &buf)
+                triggerDistanceM: FfiConverterDouble.read(from: &buf), 
+                drivingSide: FfiConverterOptionString.read(from: &buf), 
+                roadRef: FfiConverterOptionString.read(from: &buf), 
+                country: FfiConverterOptionString.read(from: &buf), 
+                subdivision: FfiConverterOptionString.read(from: &buf), 
+                roadClass: FfiConverterOptionString.read(from: &buf)
         )
     }
 
@@ -4940,6 +5664,11 @@ public struct FfiConverterTypeVisualBanner: FfiConverterRustBuffer {
         FfiConverterOptionTypeBannerLine.write(value.secondary, into: &buf)
         FfiConverterOptionTypeBannerLine.write(value.sub, into: &buf)
         FfiConverterDouble.write(value.triggerDistanceM, into: &buf)
+        FfiConverterOptionString.write(value.drivingSide, into: &buf)
+        FfiConverterOptionString.write(value.roadRef, into: &buf)
+        FfiConverterOptionString.write(value.country, into: &buf)
+        FfiConverterOptionString.write(value.subdivision, into: &buf)
+        FfiConverterOptionString.write(value.roadClass, into: &buf)
     }
 }
 
@@ -5328,6 +6057,89 @@ public func FfiConverterTypeAdrTunnelCode_lower(_ value: AdrTunnelCode) -> RustB
 // Note that we don't yet support `indirect` for enums.
 // See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
 /**
+ * How a channel install ended.
+ */
+
+public enum ChannelInstallOutcome: Equatable, Hashable {
+    
+    /**
+     * The package verified and was promoted.
+     */
+    case installed(
+        /**
+         * What the install did.
+         */result: ChannelInstallResult
+    )
+    /**
+     * The [`CancelToken`] was tripped before promotion. Nothing was
+     * installed; verified layers stay parked for the next attempt.
+     */
+    case cancelled
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension ChannelInstallOutcome: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeChannelInstallOutcome: FfiConverterRustBuffer {
+    typealias SwiftType = ChannelInstallOutcome
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ChannelInstallOutcome {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .installed(result: try FfiConverterTypeChannelInstallResult.read(from: &buf)
+        )
+        
+        case 2: return .cancelled
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: ChannelInstallOutcome, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case let .installed(result):
+            writeInt(&buf, Int32(1))
+            FfiConverterTypeChannelInstallResult.write(result, into: &buf)
+            
+        
+        case .cancelled:
+            writeInt(&buf, Int32(2))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeChannelInstallOutcome_lift(_ buf: RustBuffer) throws -> ChannelInstallOutcome {
+    return try FfiConverterTypeChannelInstallOutcome.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeChannelInstallOutcome_lower(_ value: ChannelInstallOutcome) -> RustBuffer {
+    return FfiConverterTypeChannelInstallOutcome.lower(value)
+}
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/**
  * Valhalla costing model, mirroring [`sn_valhalla::valhalla::Costing`].
  */
 
@@ -5695,6 +6507,89 @@ public func FfiConverterTypeGuidanceUpdate_lower(_ value: GuidanceUpdate) -> Rus
 // Note that we don't yet support `indirect` for enums.
 // See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
 /**
+ * How a cancellable install ended.
+ */
+
+public enum InstallOutcome: Equatable, Hashable {
+    
+    /**
+     * The package verified and was promoted.
+     */
+    case installed(
+        /**
+         * The installed territory.
+         */territory: TerritoryInfo
+    )
+    /**
+     * The [`CancelToken`] was tripped before promotion. Nothing was
+     * installed; staging was removed.
+     */
+    case cancelled
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension InstallOutcome: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeInstallOutcome: FfiConverterRustBuffer {
+    typealias SwiftType = InstallOutcome
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> InstallOutcome {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .installed(territory: try FfiConverterTypeTerritoryInfo.read(from: &buf)
+        )
+        
+        case 2: return .cancelled
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: InstallOutcome, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case let .installed(territory):
+            writeInt(&buf, Int32(1))
+            FfiConverterTypeTerritoryInfo.write(territory, into: &buf)
+            
+        
+        case .cancelled:
+            writeInt(&buf, Int32(2))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeInstallOutcome_lift(_ buf: RustBuffer) throws -> InstallOutcome {
+    return try FfiConverterTypeInstallOutcome.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeInstallOutcome_lower(_ value: InstallOutcome) -> RustBuffer {
+    return FfiConverterTypeInstallOutcome.lower(value)
+}
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/**
  * How urgently a guidance update should be surfaced to the driver.
  *
  * Voice layers map this to prosody (pitch/rate) and earcons; visual
@@ -5969,6 +6864,32 @@ public enum NavCoreError: Swift.Error, Equatable, Hashable, Foundation.Localized
          * Human-readable description.
          */message: String
     )
+    /**
+     * The territory has a layer of that kind, but **this install left it
+     * out** (see [`TerritoryManager::install_from_channel`]).
+     *
+     * Its own case on purpose: it is not `Territory` (nothing failed),
+     * not a corrupt install and not an unknown territory. The app knows
+     * what it chose not to download, so this is the signal to offer the
+     * download, not to report an error.
+     *
+     * The human-readable sentence is `detail`, not `message`: a UniFFI
+     * error variant with several fields, one of them named `message`,
+     * generates a Kotlin class whose constructor property collides with
+     * `Throwable.message` and does not compile. Single-field variants
+     * (every other case here) are fine.
+     */
+    case LayerNotInstalled(
+        /**
+         * The territory identifier.
+         */territoryId: String, 
+        /**
+         * The layer kind that was requested, kebab-case.
+         */kind: String, 
+        /**
+         * Human-readable description.
+         */detail: String
+    )
 
     
 
@@ -6016,6 +6937,11 @@ public struct FfiConverterTypeNavCoreError: FfiConverterRustBuffer {
         case 6: return .Search(
             message: try FfiConverterString.read(from: &buf)
             )
+        case 7: return .LayerNotInstalled(
+            territoryId: try FfiConverterString.read(from: &buf), 
+            kind: try FfiConverterString.read(from: &buf), 
+            detail: try FfiConverterString.read(from: &buf)
+            )
 
          default: throw UniffiInternalError.unexpectedEnumCase
         }
@@ -6056,6 +6982,13 @@ public struct FfiConverterTypeNavCoreError: FfiConverterRustBuffer {
         case let .Search(message):
             writeInt(&buf, Int32(6))
             FfiConverterString.write(message, into: &buf)
+            
+        
+        case let .LayerNotInstalled(territoryId,kind,detail):
+            writeInt(&buf, Int32(7))
+            FfiConverterString.write(territoryId, into: &buf)
+            FfiConverterString.write(kind, into: &buf)
+            FfiConverterString.write(detail, into: &buf)
             
         }
     }
@@ -6670,6 +7603,89 @@ public func FfiConverterTypeStyleTheme_lower(_ value: StyleTheme) -> RustBuffer 
 }
 
 
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/**
+ * How a cancellable update ended.
+ */
+
+public enum UpdateOutcome: Equatable, Hashable {
+    
+    /**
+     * The update verified and was swapped in.
+     */
+    case applied(
+        /**
+         * What the update did.
+         */result: UpdateResult
+    )
+    /**
+     * The [`CancelToken`] was tripped before promotion. The installed
+     * version is untouched; verified layers stay parked for a retry.
+     */
+    case cancelled
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension UpdateOutcome: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeUpdateOutcome: FfiConverterRustBuffer {
+    typealias SwiftType = UpdateOutcome
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> UpdateOutcome {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .applied(result: try FfiConverterTypeUpdateResult.read(from: &buf)
+        )
+        
+        case 2: return .cancelled
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: UpdateOutcome, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case let .applied(result):
+            writeInt(&buf, Int32(1))
+            FfiConverterTypeUpdateResult.write(result, into: &buf)
+            
+        
+        case .cancelled:
+            writeInt(&buf, Int32(2))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeUpdateOutcome_lift(_ buf: RustBuffer) throws -> UpdateOutcome {
+    return try FfiConverterTypeUpdateOutcome.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeUpdateOutcome_lower(_ value: UpdateOutcome) -> RustBuffer {
+    return FfiConverterTypeUpdateOutcome.lower(value)
+}
+
+
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
@@ -7259,6 +8275,31 @@ fileprivate struct FfiConverterSequenceTypeAdrTunnelCategory: FfiConverterRustBu
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceTypeMapLayerKind: FfiConverterRustBuffer {
+    typealias SwiftType = [MapLayerKind]
+
+    public static func write(_ value: [MapLayerKind], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeMapLayerKind.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [MapLayerKind] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [MapLayerKind]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeMapLayerKind.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypeProbeEvent: FfiConverterRustBuffer {
     typealias SwiftType = [ProbeEvent]
 
@@ -7427,6 +8468,12 @@ private let initializationResult: InitializationResult = {
     if (uniffi_sn_nav_core_checksum_func_style_with_buildings_3d() != 4072) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_sn_nav_core_checksum_method_canceltoken_cancel() != 4326) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_sn_nav_core_checksum_method_canceltoken_is_cancelled() != 13568) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_sn_nav_core_checksum_method_guidancesession_advance_to_next_step() != 26486) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -7442,16 +8489,40 @@ private let initializationResult: InitializationResult = {
     if (uniffi_sn_nav_core_checksum_method_territorymanager_active() != 54611) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_sn_nav_core_checksum_method_territorymanager_apply_update() != 36372) {
+    if (uniffi_sn_nav_core_checksum_method_territorymanager_apply_update() != 15730) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_sn_nav_core_checksum_method_territorymanager_apply_update_cancellable() != 44606) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_sn_nav_core_checksum_method_territorymanager_cached_layer_bytes() != 3820) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_sn_nav_core_checksum_method_territorymanager_check_for_update() != 29269) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_sn_nav_core_checksum_method_territorymanager_install_dir() != 15334) {
+    if (uniffi_sn_nav_core_checksum_method_territorymanager_clear_layer_cache() != 48212) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_sn_nav_core_checksum_method_territorymanager_install_snpkg() != 27201) {
+    if (uniffi_sn_nav_core_checksum_method_territorymanager_install_dir() != 13166) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_sn_nav_core_checksum_method_territorymanager_install_dir_cancellable() != 1733) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_sn_nav_core_checksum_method_territorymanager_install_dir_partial() != 23111) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_sn_nav_core_checksum_method_territorymanager_install_from_channel() != 6595) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_sn_nav_core_checksum_method_territorymanager_install_snpkg() != 15119) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_sn_nav_core_checksum_method_territorymanager_install_snpkg_cancellable() != 49418) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_sn_nav_core_checksum_method_territorymanager_install_snpkg_partial() != 21536) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_sn_nav_core_checksum_method_territorymanager_layer_path() != 62986) {
@@ -7473,6 +8544,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_sn_nav_core_checksum_method_territorymanager_territory_style() != 39484) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_sn_nav_core_checksum_method_territorymanager_verify_territory() != 14290) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_sn_nav_core_checksum_method_territorysearch_reverse() != 17589) {
@@ -7500,6 +8574,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_sn_nav_core_checksum_method_localrouter_route() != 17998) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_sn_nav_core_checksum_constructor_canceltoken_new() != 52490) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_sn_nav_core_checksum_constructor_guidancesession_new() != 42901) {

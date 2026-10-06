@@ -11,9 +11,15 @@ let package = Package(
     products: [
         .library(name: "MapMapKit", targets: ["MapMapKit"]),
         .library(name: "MapMapValhalla", targets: ["MapMapValhalla"]),
+        // CarPlay is an iOS-only system framework. The monorepo
+        // manifest guards this product behind MAPMAP_HOST_CORE
+        // because that package also declares .macOS(.v13) for the
+        // host test path; this distro package declares iOS only,
+        // so the product needs no guard here.
+        .library(name: "MapMapCarPlay", targets: ["MapMapCarPlay"]),
     ],
     dependencies: [
-        .package(url: "https://github.com/Rallista/valhalla-mobile.git", from: "0.5.1")
+        .package(url: "https://github.com/Rallista/valhalla-mobile.git", .upToNextMinor(from: "0.5.1"))
     ],
     targets: [
         .target(
@@ -28,10 +34,14 @@ let package = Package(
                 .product(name: "Valhalla", package: "valhalla-mobile"),
             ]
         ),
+        .target(
+            name: "MapMapCarPlay",
+            dependencies: ["MapMapKit"]
+        ),
         .binaryTarget(
             name: "MapMapFFI",
-            url: "https://github.com/Mapmapai/mapmap-ios/releases/download/0.6.0/MapMapFFI.xcframework.zip",
-            checksum: "229ea92d23b638993c314090aee208681a4b78f68cbc634b7744ce0330cc09ad"
+            url: "https://github.com/Mapmapai/mapmap-ios/releases/download/0.7.0/MapMapFFI.xcframework.zip",
+            checksum: "85b43a0b72f12d33fa941d41c55cc1cbbfe6fa28dc5742e278c1b6d31f90fa33"
         ),
     ]
 )
