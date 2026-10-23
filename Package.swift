@@ -19,7 +19,7 @@ let package = Package(
         .library(name: "MapMapCarPlay", targets: ["MapMapCarPlay"]),
     ],
     dependencies: [
-        .package(url: "https://github.com/Rallista/valhalla-mobile.git", .upToNextMinor(from: "0.5.1"))
+        .package(url: "https://github.com/Rallista/valhalla-mobile.git", .upToNextMinor(from: "0.6.4"))
     ],
     targets: [
         .target(
