@@ -24,10 +24,18 @@ import Foundation
 /// `InstallOutcome.cancelled` / `UpdateOutcome.cancelled` rather than
 /// throwing: nothing was installed, staging is removed, the previous
 /// version is untouched. Cancelling after completion changes nothing.
+///
+/// Custom regions (`region-` ids, cut by `POST /v1/jobs/territory`) are
+/// signed by a separate region key. Pass its public half as `regionKeyHex`
+/// (``TerritoryKeys/hostedRegionKeyHex`` for the hosted gateway) to accept
+/// them; the core then verifies `region-` ids against that key only and
+/// every other id against the factory key only. Without it every `region-`
+/// package is refused as a bad signature.
 public actor TerritoryStore {
 
     private let rootDir: URL
     private let verifyingKeyHex: String
+    private let regionKeyHex: String?
 
     // Lazy so constructing the store never touches the native library —
     // important for previews and tests; the first call pays the cost.
@@ -43,10 +51,18 @@ public actor TerritoryStore {
     ///   - verifyingKeyHex: the factory signing key's public half, 64 hex
     ///     characters (`sn_package::VerifyingKey::to_hex`). Baked into
     ///     the app at build time — treat it like a pin.
-    public init(rootDir: URL, verifyingKeyHex: String) {
+    ///   - regionKeyHex: the region signing key's public half, 64 hex
+    ///     characters, or `nil` to refuse custom regions. Pinned like the
+    ///     factory key; never read from the network.
+    public init(rootDir: URL, verifyingKeyHex: String, regionKeyHex: String? = nil) {
         self.rootDir = rootDir
         self.verifyingKeyHex = verifyingKeyHex
+        self.regionKeyHex = regionKeyHex
     }
+
+    /// Whether this store was given a region key, and so can install
+    /// custom regions.
+    public nonisolated var acceptsCustomRegions: Bool { regionKeyHex != nil }
 
     deinit {
         for continuation in observers.values {
@@ -56,8 +72,15 @@ public actor TerritoryStore {
 
     private func manager() throws -> TerritoryManager {
         if let manager = lazyManager { return manager }
-        let manager = try TerritoryManager(
-            rootDir: rootDir.path, verifyingKeyHex: verifyingKeyHex)
+        let manager: TerritoryManager
+        if let regionKeyHex {
+            manager = try TerritoryManager.withRegionKey(
+                rootDir: rootDir.path, verifyingKeyHex: verifyingKeyHex,
+                regionKeyHex: regionKeyHex)
+        } else {
+            manager = try TerritoryManager(
+                rootDir: rootDir.path, verifyingKeyHex: verifyingKeyHex)
+        }
         lazyManager = manager
         return manager
     }
@@ -144,6 +167,143 @@ public actor TerritoryStore {
         }
         if case .installed = outcome { publish(try manager.list()) }
         return outcome
+    }
+
+    /// Install `territoryId` **from its channel**: the first-install
+    /// counterpart of ``applyUpdate(territoryId:manifestJson:manifestSigBase64:fetcher:)``.
+    /// `indexJson` / `indexSigBase64` are the exact served bytes of the
+    /// channel index and its detached signature; the channel's latest
+    /// version is installed, fetching only the layers not in `omit`.
+    ///
+    /// Nothing is trusted but the pinned keys: the index signature, the
+    /// manifest signature and every layer hash are checked, and the
+    /// assembled package goes through the full verification pass before it
+    /// is promoted. Interrupted installs resume. A tripped `cancel` (or a
+    /// cancelled calling task) yields `.cancelled` with nothing installed.
+    ///
+    /// - Throws: ``NavCoreError/Verification(message:)`` if a signature or
+    ///   hash does not verify, including a `region-` id on a store without
+    ///   a region key.
+    public func installFromChannel(
+        territoryId: String,
+        indexJson: String,
+        indexSigBase64: String,
+        fetcher: LayerFetcher,
+        omit: [MapLayerKind] = [],
+        cancel: CancelToken = CancelToken()
+    ) async throws -> ChannelInstallOutcome {
+        let manager = try manager()
+        let outcome = try await blocking(cancel: cancel) {
+            try manager.installFromChannel(
+                territoryId: territoryId, indexJson: indexJson,
+                indexSigBase64: indexSigBase64, omit: omit, fetcher: fetcher,
+                cancel: cancel)
+        }
+        if case .installed = outcome { publish(try manager.list()) }
+        return outcome
+    }
+
+    /// Bring `territoryId` to the channel's latest version, whichever way
+    /// that takes: a first install from the channel when it is not
+    /// installed, a signed differential update when an older version is,
+    /// nothing when it is already current. Updates go through
+    /// ``checkForUpdate(territoryId:indexJson:indexSigBase64:fetcher:)``,
+    /// so a channel can never move an installed territory backwards.
+    public func sync(
+        territoryId: String,
+        indexJson: String,
+        indexSigBase64: String,
+        fetcher: LayerFetcher,
+        omit: [MapLayerKind] = [],
+        cancel: CancelToken = CancelToken()
+    ) async throws -> ChannelSync {
+        let installed = try await refresh().first { $0.territoryId == territoryId }
+        guard let installed else {
+            switch try await installFromChannel(
+                territoryId: territoryId, indexJson: indexJson,
+                indexSigBase64: indexSigBase64, fetcher: fetcher, omit: omit,
+                cancel: cancel)
+            {
+            case .installed(let result): return .installed(result)
+            case .cancelled: return .cancelled
+            }
+        }
+        guard
+            let update = try await checkForUpdate(
+                territoryId: territoryId, indexJson: indexJson,
+                indexSigBase64: indexSigBase64, fetcher: fetcher)
+        else { return .upToDate(installed) }
+        switch try await applyUpdate(
+            territoryId: territoryId, update: update, fetcher: fetcher, cancel: cancel)
+        {
+        case .applied(let result): return .updated(result)
+        case .cancelled: return .cancelled
+        }
+    }
+
+    /// ``sync(territoryId:indexJson:indexSigBase64:fetcher:omit:cancel:)``
+    /// over HTTPS: fetch the signed index from `source` and every layer
+    /// relative to it with an ``HTTPChannelFetcher``. `cancel` also stops a
+    /// transfer in progress.
+    public func sync(
+        territoryId: String,
+        source: ChannelSource,
+        apiKey: String? = nil,
+        omit: [MapLayerKind] = [],
+        cancel: CancelToken = CancelToken(),
+        onBytes: (@Sendable (Int64) -> Void)? = nil
+    ) async throws -> ChannelSync {
+        let fetcher = HTTPChannelFetcher(
+            source: source, apiKey: apiKey, cancel: cancel, onBytes: onBytes)
+        let index: SignedChannelIndex
+        do {
+            index = try await blocking(cancel: cancel) { try fetcher.fetchIndex() }
+        } catch {
+            if cancel.isCancelled() { return .cancelled }
+            throw error
+        }
+        return try await sync(
+            territoryId: territoryId, indexJson: index.json,
+            indexSigBase64: index.signatureBase64, fetcher: fetcher, omit: omit,
+            cancel: cancel)
+    }
+
+    /// Install, or update, a custom region from the `territory_id`,
+    /// `index_url` and `index_sig_url` of a `POST /v1/jobs/territory`
+    /// result. A re-cut of the same area after the country is republished
+    /// is the same id at a newer version, so calling this again is the
+    /// update.
+    ///
+    /// - Throws: ``ChannelSourceError/noRegionKey`` if this store has no
+    ///   region key; ``ChannelSourceError`` for a malformed id or URL.
+    public func installCustomRegion(
+        territoryId: String,
+        indexURL: URL,
+        indexSigURL: URL,
+        apiKey: String? = nil,
+        omit: [MapLayerKind] = [],
+        cancel: CancelToken = CancelToken(),
+        onBytes: (@Sendable (Int64) -> Void)? = nil
+    ) async throws -> ChannelSync {
+        guard acceptsCustomRegions else { throw ChannelSourceError.noRegionKey }
+        let source = try ChannelSource.customRegion(
+            territoryId: territoryId, indexURL: indexURL, indexSigURL: indexSigURL)
+        return try await sync(
+            territoryId: territoryId, source: source, apiKey: apiKey, omit: omit,
+            cancel: cancel, onBytes: onBytes)
+    }
+
+    /// Re-verify an installed territory from disk: the manifest signature
+    /// (against the key its id is partitioned to), the hash of every layer
+    /// it holds and the absence of every layer it omitted. The on-demand
+    /// integrity check for after a restore or a crash.
+    ///
+    /// - Throws: ``NavCoreError/Verification(message:)`` when the install
+    ///   must be repaired or reinstalled.
+    @discardableResult
+    public func verify(territoryId: String) async throws -> TerritoryInfo {
+        let manager = try manager()
+        return try await blocking { try manager.verifyTerritory(territoryId: territoryId) }
     }
 
     /// Mark `territoryId` active; persisted atomically by the core.
@@ -356,4 +516,16 @@ public actor TerritoryStore {
             continuation.yield(listed)
         }
     }
+}
+
+/// What ``TerritoryStore/sync(territoryId:indexJson:indexSigBase64:fetcher:omit:cancel:)`` did.
+public enum ChannelSync: Sendable {
+    /// The territory was not installed; the channel's latest version now is.
+    case installed(ChannelInstallResult)
+    /// An older version was installed; it was updated in place.
+    case updated(UpdateResult)
+    /// Already on the channel's latest version; nothing was downloaded.
+    case upToDate(TerritoryInfo)
+    /// The `CancelToken` was tripped; nothing changed on disk.
+    case cancelled
 }

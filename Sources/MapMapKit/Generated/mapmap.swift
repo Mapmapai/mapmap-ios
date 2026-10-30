@@ -1969,6 +1969,24 @@ public convenience init(rootDir: String, verifyingKeyHex: String)throws  {
     }
 
     
+    /**
+     * [`Self::new`], also trusting custom regions (`region-…` ids, cut by
+     * `POST /v1/jobs/territory`) signed by `region_key_hex`, the public
+     * half of the gateway's region signing key. The keys are partitioned
+     * by id: the region key verifies `region-` ids only and the factory
+     * key everything else. Pin both in the app; never read either from
+     * the network.
+     */
+public static func withRegionKey(rootDir: String, verifyingKeyHex: String, regionKeyHex: String)throws  -> TerritoryManager  {
+    return try  FfiConverterTypeTerritoryManager_lift(try rustCallWithError(FfiConverterTypeNavCoreError_lift) {
+    uniffi_sn_nav_core_fn_constructor_territorymanager_with_region_key(
+        FfiConverterString.lower(rootDir),
+        FfiConverterString.lower(verifyingKeyHex),
+        FfiConverterString.lower(regionKeyHex),$0
+    )
+})
+}
+    
 
     
     /**
@@ -8583,6 +8601,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_sn_nav_core_checksum_constructor_territorymanager_new() != 59206) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_sn_nav_core_checksum_constructor_territorymanager_with_region_key() != 37755) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_sn_nav_core_checksum_constructor_probecollector_new() != 10026) {

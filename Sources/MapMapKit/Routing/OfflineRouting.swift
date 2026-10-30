@@ -82,14 +82,18 @@ public enum OfflineRouting {
     }
 }
 
-/// Writes the minimal `valhalla.json` the on-device Valhalla engine needs.
+/// Writes the `valhalla.json` the on-device Valhalla engine needs.
 ///
-/// Key names and defaults follow Valhalla's own config generator,
-/// `scripts/valhalla_build_config` (MIT):
-/// https://github.com/valhalla/valhalla/blob/master/scripts/valhalla_build_config
-/// Keys not listed fall back to Valhalla's compiled-in defaults — the
-/// same convention `sn-factory` uses for the build-side config. Only the
-/// tile source and a mobile-sized cache are pinned here.
+/// The document is Valhalla's own complete default config
+/// (`valhalla_build_config`, MIT,
+/// https://github.com/valhalla/valhalla/blob/master/scripts/valhalla_build_config),
+/// bundled as `Resources/valhalla-defaults.json`, with the tile source and
+/// a mobile-sized cache set on top. The engine reads many keys (every
+/// `service_limits` section, `loki`, `thor`, `meili`) with no compiled-in
+/// fallback: a config carrying only `mjolnir` makes every route fail with
+/// "No such node (service_limits.isochrone.max_contours)", which is what
+/// this writer produced before (found on an Android device; the Android
+/// writer bundles the same file).
 public enum ValhallaConfigWriter {
 
     /// Mobile default for `mjolnir.max_cache_size` (bytes): 256 MiB.
@@ -105,17 +109,21 @@ public enum ValhallaConfigWriter {
             throw MapMapKitError.invalidArgument(
                 "maxCacheBytes must be positive, got \(maxCacheBytes)")
         }
-        let config: [String: Any] = [
-            "logging": [
-                "type": "std_out",
-                "color": false,
-            ],
-            "mjolnir": [
-                "tile_dir": tileDir.path,
-                "max_cache_size": maxCacheBytes,
-                "use_lru_mem_cache": true,
-            ],
-        ]
+        guard
+            let url = Bundle.module.url(forResource: "valhalla-defaults", withExtension: "json"),
+            var config = try JSONSerialization.jsonObject(with: Data(contentsOf: url))
+                as? [String: Any],
+            var mjolnir = config["mjolnir"] as? [String: Any]
+        else {
+            throw MapMapKitError.invalidArgument(
+                "valhalla-defaults.json is missing from MapMapKit's resources")
+        }
+        config["_source"] = nil
+        config["logging"] = ["type": "std_out", "color": false]
+        mjolnir["tile_dir"] = tileDir.path
+        mjolnir["max_cache_size"] = maxCacheBytes
+        mjolnir["use_lru_mem_cache"] = true
+        config["mjolnir"] = mjolnir
         let data = try JSONSerialization.data(
             withJSONObject: config, options: [.prettyPrinted, .sortedKeys])
         guard let json = String(data: data, encoding: .utf8) else {

@@ -19,9 +19,33 @@ let package = Package(
         .library(name: "MapMapCarPlay", targets: ["MapMapCarPlay"]),
     ],
     dependencies: [
-        .package(url: "https://github.com/Rallista/valhalla-mobile.git", .upToNextMinor(from: "0.5.1"))
+        .package(url: "https://github.com/Rallista/valhalla-openapi-models-swift.git", .upToNextMinor(from: "0.6.0")),
+        .package(url: "https://github.com/UInt2048/Light-Swift-Untar.git", .upToNextMajor(from: "1.0.4")),
     ],
     targets: [
+        // On-device engine 3.9.1-1: valhalla-mobile 0.6.4 (MIT)
+        // built against Valhalla 3.9.1 and the MapMap patch series.
+        .target(
+            name: "Valhalla",
+            dependencies: [
+                "ValhallaObjc",
+                "ValhallaWrapper",
+                .product(name: "ValhallaConfigModels", package: "valhalla-openapi-models-swift"),
+                .product(name: "ValhallaModels", package: "valhalla-openapi-models-swift"),
+                .product(name: "Light-Swift-Untar", package: "Light-Swift-Untar"),
+            ],
+            resources: [.process("SupportData")]
+        ),
+        .target(
+            name: "ValhallaObjc",
+            dependencies: ["ValhallaWrapper"],
+            linkerSettings: [.linkedLibrary("z")]
+        ),
+        .binaryTarget(
+            name: "ValhallaWrapper",
+            url: "https://github.com/Mapmapai/mapmap-ios/releases/download/0.8.0/valhalla-wrapper.xcframework.zip",
+            checksum: "f707d50a2c83b75e87797f79ea6e42ad27dcd49142eee51b937ad482fbb2be16"
+        ),
         .target(
             name: "MapMapKit",
             dependencies: ["MapMapFFI"],
@@ -31,7 +55,7 @@ let package = Package(
             name: "MapMapValhalla",
             dependencies: [
                 "MapMapKit",
-                .product(name: "Valhalla", package: "valhalla-mobile"),
+                "Valhalla",
             ]
         ),
         .target(
@@ -40,8 +64,10 @@ let package = Package(
         ),
         .binaryTarget(
             name: "MapMapFFI",
-            url: "https://github.com/Mapmapai/mapmap-ios/releases/download/0.7.0/MapMapFFI.xcframework.zip",
-            checksum: "85b43a0b72f12d33fa941d41c55cc1cbbfe6fa28dc5742e278c1b6d31f90fa33"
+            url: "https://github.com/Mapmapai/mapmap-ios/releases/download/0.8.0/MapMapFFI.xcframework.zip",
+            checksum: "d1fbfef51b68870075789ffec9db35dbfc1778766d33b261eee3c7df36c5f5c0"
         ),
-    ]
+    ],
+    cLanguageStandard: .gnu17,
+    cxxLanguageStandard: .cxx20
 )
