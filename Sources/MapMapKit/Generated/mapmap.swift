@@ -1444,6 +1444,240 @@ public func FfiConverterTypeLocalRouter_lower(_ value: LocalRouter) -> UInt64 {
 
 
 /**
+ * The injection point for the on-device engine's `trace_route` action,
+ * which offline coverage guidance walks a plan's pieces with
+ * (`shape_match: edge_walk`, the engine's exact edge walk; see
+ * [`crate::coverage`]).
+ *
+ * A separate interface from [`LocalRouter`] so an app's own
+ * `LocalRouter` implementations keep compiling. valhalla-mobile 0.6.4 (the
+ * wrapper `ai.mapmap:valhalla-engine` and the `MapMapValhalla` product are
+ * built from) exposes the action as `traceRoute(request)` on Android and
+ * `traceRoute(rawRequest:)` on iOS; the SDKs' `ValhallaMobileRouter`
+ * implements both interfaces.
+ */
+public protocol LocalTraceRouter: AnyObject, Sendable {
+    
+    /**
+     * Execute a Valhalla `trace_route` request and return the raw response
+     * JSON (a route response, or a Valhalla error body or the wrapper's
+     * `{"code", "message"}` envelope).
+     */
+    func traceRoute(requestJson: String)  -> String
+    
+}
+/**
+ * The injection point for the on-device engine's `trace_route` action,
+ * which offline coverage guidance walks a plan's pieces with
+ * (`shape_match: edge_walk`, the engine's exact edge walk; see
+ * [`crate::coverage`]).
+ *
+ * A separate interface from [`LocalRouter`] so an app's own
+ * `LocalRouter` implementations keep compiling. valhalla-mobile 0.6.4 (the
+ * wrapper `ai.mapmap:valhalla-engine` and the `MapMapValhalla` product are
+ * built from) exposes the action as `traceRoute(request)` on Android and
+ * `traceRoute(rawRequest:)` on iOS; the SDKs' `ValhallaMobileRouter`
+ * implements both interfaces.
+ */
+open class LocalTraceRouterImpl: LocalTraceRouter, @unchecked Sendable {
+    fileprivate let handle: UInt64
+
+    /// Used to instantiate a [FFIObject] without an actual handle, for fakes in tests, mostly.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public struct NoHandle {
+        public init() {}
+    }
+
+    // TODO: We'd like this to be `private` but for Swifty reasons,
+    // we can't implement `FfiConverter` without making this `required` and we can't
+    // make it `required` without making it `public`.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    required public init(unsafeFromHandle handle: UInt64) {
+        self.handle = handle
+    }
+
+    // This constructor can be used to instantiate a fake object.
+    // - Parameter noHandle: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
+    //
+    // - Warning:
+    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing handle the FFI lower functions will crash.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public init(noHandle: NoHandle) {
+        self.handle = 0
+    }
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public func uniffiCloneHandle() -> UInt64 {
+        return try! rustCall { uniffi_sn_nav_core_fn_clone_localtracerouter(self.handle, $0) }
+    }
+    // No primary constructor declared for this class.
+
+    deinit {
+        if handle == 0 {
+            // Mock objects have handle=0 don't try to free them
+            return
+        }
+
+        try! rustCall { uniffi_sn_nav_core_fn_free_localtracerouter(handle, $0) }
+    }
+
+    
+
+    
+    /**
+     * Execute a Valhalla `trace_route` request and return the raw response
+     * JSON (a route response, or a Valhalla error body or the wrapper's
+     * `{"code", "message"}` envelope).
+     */
+open func traceRoute(requestJson: String) -> String  {
+    return try!  FfiConverterString.lift(try! rustCall() {
+    uniffi_sn_nav_core_fn_method_localtracerouter_trace_route(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(requestJson),$0
+    )
+})
+}
+    
+
+    
+}
+
+
+
+// Put the implementation in a struct so we don't pollute the top-level namespace
+fileprivate struct UniffiCallbackInterfaceLocalTraceRouter {
+
+    // Create the VTable using a series of closures.
+    // Swift automatically converts these into C callback functions.
+    //
+    // Store the vtable directly.
+    static let vtable: UniffiVTableCallbackInterfaceLocalTraceRouter = UniffiVTableCallbackInterfaceLocalTraceRouter(
+        uniffiFree: { (uniffiHandle: UInt64) -> () in
+            do {
+                try FfiConverterTypeLocalTraceRouter.handleMap.remove(handle: uniffiHandle)
+            } catch {
+                print("Uniffi callback interface LocalTraceRouter: handle missing in uniffiFree")
+            }
+        },
+        uniffiClone: { (uniffiHandle: UInt64) -> UInt64 in
+            do {
+                return try FfiConverterTypeLocalTraceRouter.handleMap.clone(handle: uniffiHandle)
+            } catch {
+                fatalError("Uniffi callback interface LocalTraceRouter: handle missing in uniffiClone")
+            }
+        },
+        traceRoute: { (
+            uniffiHandle: UInt64,
+            requestJson: RustBuffer,
+            uniffiOutReturn: UnsafeMutablePointer<RustBuffer>,
+            uniffiCallStatus: UnsafeMutablePointer<RustCallStatus>
+        ) in
+            let makeCall = {
+                () throws -> String in
+                guard let uniffiObj = try? FfiConverterTypeLocalTraceRouter.handleMap.get(handle: uniffiHandle) else {
+                    throw UniffiInternalError.unexpectedStaleHandle
+                }
+                return uniffiObj.traceRoute(
+                     requestJson: try FfiConverterString.lift(requestJson)
+                )
+            }
+
+            
+            let writeReturn = { uniffiOutReturn.pointee = FfiConverterString.lower($0) }
+            uniffiTraitInterfaceCall(
+                callStatus: uniffiCallStatus,
+                makeCall: makeCall,
+                writeReturn: writeReturn
+            )
+        }
+    )
+
+    // Rust stores this pointer for future callback invocations, so it must live
+    // for the process lifetime (not just for the init function call).
+    //
+    // `nonisolated(unsafe)` is needed under Swift 6 strict concurrency.
+    // This is safe because the pointee is initialized once during static init
+    // and never mutated by either side of the FFI.  Its fields are C function pointers.
+    nonisolated(unsafe) static let vtablePtr: UnsafePointer<UniffiVTableCallbackInterfaceLocalTraceRouter> = {
+        let ptr = UnsafeMutablePointer<UniffiVTableCallbackInterfaceLocalTraceRouter>.allocate(capacity: 1)
+        ptr.initialize(to: vtable)
+        return UnsafePointer(ptr)
+    }()
+}
+
+private func uniffiCallbackInitLocalTraceRouter() {
+    uniffi_sn_nav_core_fn_init_callback_vtable_localtracerouter(UniffiCallbackInterfaceLocalTraceRouter.vtablePtr)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeLocalTraceRouter: FfiConverter {
+    fileprivate static let handleMap = UniffiHandleMap<LocalTraceRouter>()
+
+    typealias FfiType = UInt64
+    typealias SwiftType = LocalTraceRouter
+
+    public static func lift(_ handle: UInt64) throws -> LocalTraceRouter {
+        if ((handle & 1) == 0) {
+            // Rust-generated handle, construct a new class that uses the handle to implement the
+            // interface
+            return LocalTraceRouterImpl(unsafeFromHandle: handle)
+        } else {
+            // Swift-generated handle, get the object from the handle map
+            return try handleMap.remove(handle: handle)
+        }
+    }
+
+    public static func lower(_ value: LocalTraceRouter) -> UInt64 {
+         if let rustImpl = value as? LocalTraceRouterImpl {
+             // Rust-implemented object.  Clone the handle and return it
+            return rustImpl.uniffiCloneHandle()
+         } else {
+            // Swift object, generate a new vtable handle and return that.
+            return handleMap.insert(obj: value)
+         }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> LocalTraceRouter {
+        let handle: UInt64 = try readInt(&buf)
+        return try lift(handle)
+    }
+
+    public static func write(_ value: LocalTraceRouter, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeLocalTraceRouter_lift(_ handle: UInt64) throws -> LocalTraceRouter {
+    return try FfiConverterTypeLocalTraceRouter.lift(handle)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeLocalTraceRouter_lower(_ value: LocalTraceRouter) -> UInt64 {
+    return FfiConverterTypeLocalTraceRouter.lower(value)
+}
+
+
+
+
+
+
+/**
  * On-device probe collector. Feed it every guidance update with the fix's
  * position, speed and timestamp; call [`finish`](ProbeCollector::finish) at
  * arrival or trip abandonment to get the [`ProbeBatch`] to upload.
@@ -1756,6 +1990,32 @@ public protocol TerritoryManagerProtocol: AnyObject, Sendable {
      * so offer this only as a deliberate "free up space" action.
      */
     func clearLayerCache() throws 
+    
+    /**
+     * Offline turn-by-turn guidance for one drive of a hosted coverage
+     * plan, on the on-device engine: the JSON `POST /v1/coverage/guidance`
+     * answers (one leg per piece of the drive's `trace_route_parts`, each
+     * walked with the engine's exact edge walk, never map matched).
+     *
+     * `router` is the on-device engine's `trace_route` (the SDKs'
+     * `ValhallaMobileRouter`, configured on this territory's routing
+     * layer). `plan_json` is the coverage job as the app stored it (or its
+     * `result`); `request_json` is the hosted guidance request (`chunk_id`
+     * and `drive`, or `chunk`). See [`crate::coverage::guidance`].
+     */
+    func coverageGuidanceOffline(territoryId: String, router: LocalTraceRouter, planJson: String?, requestJson: String) throws  -> String
+    
+    /**
+     * Offline re-plan of the rest of a hosted coverage plan's drive round
+     * a closed street, on this territory's routing tiles: the JSON
+     * `POST /v1/coverage/reroute` answers. `plan_json` is the coverage job
+     * as the app stored it (or its `result`); `plan_request_json` the body
+     * the plan was submitted with, when kept (its `include_private` and
+     * `turn_penalties` are the defaults, as hosted); `request_json` the
+     * hosted re-plan request. CPU-bound: call it off the main thread. See
+     * [`crate::coverage::reroute`].
+     */
+    func coverageRerouteOffline(territoryId: String, planJson: String?, planRequestJson: String?, requestJson: String) throws  -> String
     
     /**
      * Install an unpacked package directory. Blocks until done and
@@ -2091,6 +2351,52 @@ open func clearLayerCache()throws   {try rustCallWithError(FfiConverterTypeNavCo
             self.uniffiCloneHandle(),$0
     )
 }
+}
+    
+    /**
+     * Offline turn-by-turn guidance for one drive of a hosted coverage
+     * plan, on the on-device engine: the JSON `POST /v1/coverage/guidance`
+     * answers (one leg per piece of the drive's `trace_route_parts`, each
+     * walked with the engine's exact edge walk, never map matched).
+     *
+     * `router` is the on-device engine's `trace_route` (the SDKs'
+     * `ValhallaMobileRouter`, configured on this territory's routing
+     * layer). `plan_json` is the coverage job as the app stored it (or its
+     * `result`); `request_json` is the hosted guidance request (`chunk_id`
+     * and `drive`, or `chunk`). See [`crate::coverage::guidance`].
+     */
+open func coverageGuidanceOffline(territoryId: String, router: LocalTraceRouter, planJson: String?, requestJson: String)throws  -> String  {
+    return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeOfflineCoverageError_lift) {
+    uniffi_sn_nav_core_fn_method_territorymanager_coverage_guidance_offline(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(territoryId),
+        FfiConverterTypeLocalTraceRouter_lower(router),
+        FfiConverterOptionString.lower(planJson),
+        FfiConverterString.lower(requestJson),$0
+    )
+})
+}
+    
+    /**
+     * Offline re-plan of the rest of a hosted coverage plan's drive round
+     * a closed street, on this territory's routing tiles: the JSON
+     * `POST /v1/coverage/reroute` answers. `plan_json` is the coverage job
+     * as the app stored it (or its `result`); `plan_request_json` the body
+     * the plan was submitted with, when kept (its `include_private` and
+     * `turn_penalties` are the defaults, as hosted); `request_json` the
+     * hosted re-plan request. CPU-bound: call it off the main thread. See
+     * [`crate::coverage::reroute`].
+     */
+open func coverageRerouteOffline(territoryId: String, planJson: String?, planRequestJson: String?, requestJson: String)throws  -> String  {
+    return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeOfflineCoverageError_lift) {
+    uniffi_sn_nav_core_fn_method_territorymanager_coverage_reroute_offline(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(territoryId),
+        FfiConverterOptionString.lower(planJson),
+        FfiConverterOptionString.lower(planRequestJson),
+        FfiConverterString.lower(requestJson),$0
+    )
+})
 }
     
     /**
@@ -7027,6 +7333,289 @@ public func FfiConverterTypeNavCoreError_lower(_ value: NavCoreError) -> RustBuf
     return FfiConverterTypeNavCoreError.lower(value)
 }
 
+
+/**
+ * Why an offline coverage call has no answer. (Every variant's sentence is
+ * `detail`, never `message`: see `NavCoreError::LayerNotInstalled`.)
+ */
+public enum OfflineCoverageError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
+
+    
+    
+    /**
+     * No such territory is installed, or it has no routing layer on this
+     * device (an install that left the routing layer out).
+     */
+    case TerritoryNotInstalled(
+        /**
+         * The territory asked for.
+         */territoryId: String, 
+        /**
+         * What to tell the driver.
+         */detail: String
+    )
+    /**
+     * The drive, or the car, lies outside the territory.
+     */
+    case PlanOutsideTerritory(
+        /**
+         * The territory asked for.
+         */territoryId: String, 
+        /**
+         * What to tell the driver.
+         */detail: String
+    )
+    /**
+     * The drive does not follow the territory's streets: the territory's
+     * map was built from other OpenStreetMap data than the plan's.
+     */
+    case MapVersionMismatch(
+        /**
+         * The plan's `graph.osm_timestamp`, when it carries one.
+         */planOsmTimestamp: String?, 
+        /**
+         * The territory's package version.
+         */territoryVersion: String, 
+        /**
+         * The territory's data timestamp, when known.
+         */territoryDataTimestamp: String?, 
+        /**
+         * What to tell the driver.
+         */detail: String
+    )
+    /**
+     * The on-device engine's edge walk refused a piece of the drive (the
+     * hosted guidance's 422 `coverage-guidance-refused`, same fields).
+     */
+    case PieceRefused(
+        /**
+         * The refused piece, from 1.
+         */piece: UInt32, 
+        /**
+         * Pieces in the drive.
+         */pieces: UInt32, 
+        /**
+         * Where the piece starts, latitude.
+         */lat: Double, 
+        /**
+         * Where the piece starts, longitude.
+         */lon: Double, 
+        /**
+         * The piece's length, km.
+         */km: Double, 
+        /**
+         * The engine's own error code, when it gave one.
+         */engineErrorCode: UInt32?, 
+        /**
+         * The engine's own message.
+         */engineError: String, 
+        /**
+         * What to tell the driver.
+         */detail: String
+    )
+    /**
+     * No new drive could be made (the hosted re-plan's 422
+     * `coverage-reroute-refused`, same `reason`s).
+     */
+    case RerouteRefused(
+        /**
+         * `car_not_located`, `nothing_reachable`, `nothing_left`, ...
+         */reason: String, 
+        /**
+         * What to tell the driver.
+         */detail: String
+    )
+    /**
+     * Over a coverage ceiling (the hosted `coverage-too-large`).
+     */
+    case TooLarge(
+        /**
+         * What to tell the driver.
+         */detail: String
+    )
+    /**
+     * The request, or the plan, is not one these calls take (the hosted
+     * 400s, same wording).
+     */
+    case InvalidRequest(
+        /**
+         * What is wrong.
+         */detail: String
+    )
+    /**
+     * The on-device engine failed (not a refusal: closed, misconfigured,
+     * or an answer that is not a route).
+     */
+    case Engine(
+        /**
+         * What failed.
+         */detail: String
+    )
+    /**
+     * A fault of ours.
+     */
+    case Internal(
+        /**
+         * What failed.
+         */detail: String
+    )
+
+    
+
+    
+
+    
+    public var errorDescription: String? {
+        String(reflecting: self)
+    }
+    
+}
+
+#if compiler(>=6)
+extension OfflineCoverageError: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeOfflineCoverageError: FfiConverterRustBuffer {
+    typealias SwiftType = OfflineCoverageError
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> OfflineCoverageError {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+
+        
+
+        
+        case 1: return .TerritoryNotInstalled(
+            territoryId: try FfiConverterString.read(from: &buf), 
+            detail: try FfiConverterString.read(from: &buf)
+            )
+        case 2: return .PlanOutsideTerritory(
+            territoryId: try FfiConverterString.read(from: &buf), 
+            detail: try FfiConverterString.read(from: &buf)
+            )
+        case 3: return .MapVersionMismatch(
+            planOsmTimestamp: try FfiConverterOptionString.read(from: &buf), 
+            territoryVersion: try FfiConverterString.read(from: &buf), 
+            territoryDataTimestamp: try FfiConverterOptionString.read(from: &buf), 
+            detail: try FfiConverterString.read(from: &buf)
+            )
+        case 4: return .PieceRefused(
+            piece: try FfiConverterUInt32.read(from: &buf), 
+            pieces: try FfiConverterUInt32.read(from: &buf), 
+            lat: try FfiConverterDouble.read(from: &buf), 
+            lon: try FfiConverterDouble.read(from: &buf), 
+            km: try FfiConverterDouble.read(from: &buf), 
+            engineErrorCode: try FfiConverterOptionUInt32.read(from: &buf), 
+            engineError: try FfiConverterString.read(from: &buf), 
+            detail: try FfiConverterString.read(from: &buf)
+            )
+        case 5: return .RerouteRefused(
+            reason: try FfiConverterString.read(from: &buf), 
+            detail: try FfiConverterString.read(from: &buf)
+            )
+        case 6: return .TooLarge(
+            detail: try FfiConverterString.read(from: &buf)
+            )
+        case 7: return .InvalidRequest(
+            detail: try FfiConverterString.read(from: &buf)
+            )
+        case 8: return .Engine(
+            detail: try FfiConverterString.read(from: &buf)
+            )
+        case 9: return .Internal(
+            detail: try FfiConverterString.read(from: &buf)
+            )
+
+         default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: OfflineCoverageError, into buf: inout [UInt8]) {
+        switch value {
+
+        
+
+        
+        
+        case let .TerritoryNotInstalled(territoryId,detail):
+            writeInt(&buf, Int32(1))
+            FfiConverterString.write(territoryId, into: &buf)
+            FfiConverterString.write(detail, into: &buf)
+            
+        
+        case let .PlanOutsideTerritory(territoryId,detail):
+            writeInt(&buf, Int32(2))
+            FfiConverterString.write(territoryId, into: &buf)
+            FfiConverterString.write(detail, into: &buf)
+            
+        
+        case let .MapVersionMismatch(planOsmTimestamp,territoryVersion,territoryDataTimestamp,detail):
+            writeInt(&buf, Int32(3))
+            FfiConverterOptionString.write(planOsmTimestamp, into: &buf)
+            FfiConverterString.write(territoryVersion, into: &buf)
+            FfiConverterOptionString.write(territoryDataTimestamp, into: &buf)
+            FfiConverterString.write(detail, into: &buf)
+            
+        
+        case let .PieceRefused(piece,pieces,lat,lon,km,engineErrorCode,engineError,detail):
+            writeInt(&buf, Int32(4))
+            FfiConverterUInt32.write(piece, into: &buf)
+            FfiConverterUInt32.write(pieces, into: &buf)
+            FfiConverterDouble.write(lat, into: &buf)
+            FfiConverterDouble.write(lon, into: &buf)
+            FfiConverterDouble.write(km, into: &buf)
+            FfiConverterOptionUInt32.write(engineErrorCode, into: &buf)
+            FfiConverterString.write(engineError, into: &buf)
+            FfiConverterString.write(detail, into: &buf)
+            
+        
+        case let .RerouteRefused(reason,detail):
+            writeInt(&buf, Int32(5))
+            FfiConverterString.write(reason, into: &buf)
+            FfiConverterString.write(detail, into: &buf)
+            
+        
+        case let .TooLarge(detail):
+            writeInt(&buf, Int32(6))
+            FfiConverterString.write(detail, into: &buf)
+            
+        
+        case let .InvalidRequest(detail):
+            writeInt(&buf, Int32(7))
+            FfiConverterString.write(detail, into: &buf)
+            
+        
+        case let .Engine(detail):
+            writeInt(&buf, Int32(8))
+            FfiConverterString.write(detail, into: &buf)
+            
+        
+        case let .Internal(detail):
+            writeInt(&buf, Int32(9))
+            FfiConverterString.write(detail, into: &buf)
+            
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeOfflineCoverageError_lift(_ buf: RustBuffer) throws -> OfflineCoverageError {
+    return try FfiConverterTypeOfflineCoverageError.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeOfflineCoverageError_lower(_ value: OfflineCoverageError) -> RustBuffer {
+    return FfiConverterTypeOfflineCoverageError.lower(value)
+}
+
 // Note that we don't yet support `indirect` for enums.
 // See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
 /**
@@ -8522,6 +9111,12 @@ private let initializationResult: InitializationResult = {
     if (uniffi_sn_nav_core_checksum_method_territorymanager_clear_layer_cache() != 48212) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_sn_nav_core_checksum_method_territorymanager_coverage_guidance_offline() != 16995) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_sn_nav_core_checksum_method_territorymanager_coverage_reroute_offline() != 35921) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_sn_nav_core_checksum_method_territorymanager_install_dir() != 13166) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -8594,6 +9189,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_sn_nav_core_checksum_method_localrouter_route() != 17998) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_sn_nav_core_checksum_method_localtracerouter_trace_route() != 7853) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_sn_nav_core_checksum_constructor_canceltoken_new() != 52490) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -8612,6 +9210,7 @@ private let initializationResult: InitializationResult = {
 
     uniffiCallbackInitLayerFetcher()
     uniffiCallbackInitLocalRouter()
+    uniffiCallbackInitLocalTraceRouter()
     return InitializationResult.ok
 }()
 

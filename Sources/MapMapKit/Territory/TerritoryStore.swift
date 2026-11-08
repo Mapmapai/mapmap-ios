@@ -332,6 +332,69 @@ public actor TerritoryStore {
         URL(fileURLWithPath: try manager().layerPath(territoryId: territoryId, kind: kind))
     }
 
+    /// Offline turn-by-turn guidance for one drive of a hosted coverage
+    /// plan, on the on-device engine: the JSON `POST /v1/coverage/guidance`
+    /// answers (`drive`, `job_id`, `chunk_id`, `pieces`, `trip` with one leg
+    /// per piece), so the app reads it exactly as it reads the hosted
+    /// answer. Every piece is walked with the engine's exact edge walk,
+    /// never map matched. Runs on a detached utility task.
+    ///
+    /// - Parameters:
+    ///   - territoryId: the installed territory that covers the plan.
+    ///   - router: the on-device engine, usually a `ValhallaMobileRouter`
+    ///     on that territory's ``MapLayerKind/valhallaTiles`` layer.
+    ///   - planJson: the coverage job as the app stored it
+    ///     (`GET /v1/jobs/{id}`), or its `result`; `nil` with a `chunk`
+    ///     request.
+    ///   - requestJson: the hosted guidance request: `chunk_id` and
+    ///     `drive`, or `chunk`.
+    /// - Throws: ``OfflineCoverageError`` (`TerritoryNotInstalled`,
+    ///   `PlanOutsideTerritory`, `PieceRefused`, `InvalidRequest`,
+    ///   `Engine`).
+    public func coverageGuidanceOffline(
+        territoryId: String,
+        router: LocalTraceRouter,
+        planJson: String?,
+        requestJson: String
+    ) async throws -> String {
+        let manager = try manager()
+        return try await blocking {
+            try manager.coverageGuidanceOffline(
+                territoryId: territoryId, router: router, planJson: planJson,
+                requestJson: requestJson)
+        }
+    }
+
+    /// Offline re-plan of the rest of a hosted coverage plan's drive round
+    /// a closed street, on the territory's own routing tiles: the JSON
+    /// `POST /v1/coverage/reroute` answers. CPU-bound; runs on a detached
+    /// utility task.
+    ///
+    /// - Parameters:
+    ///   - planJson: the coverage job as the app stored it, or its
+    ///     `result`; `nil` with an inline `trace_route` request.
+    ///   - planRequestJson: the body the plan was submitted with, when the
+    ///     app kept it: its `include_private` and `turn_penalties` are the
+    ///     re-plan's defaults, as for a hosted `job_id` request.
+    ///   - requestJson: the hosted re-plan request (`chunk_id`, `drive`,
+    ///     `position`, `avoid`, `step_index`, ...).
+    /// - Throws: ``OfflineCoverageError`` (`TerritoryNotInstalled`,
+    ///   `PlanOutsideTerritory`, `MapVersionMismatch`, `RerouteRefused`,
+    ///   `TooLarge`, `InvalidRequest`).
+    public func coverageRerouteOffline(
+        territoryId: String,
+        planJson: String?,
+        planRequestJson: String?,
+        requestJson: String
+    ) async throws -> String {
+        let manager = try manager()
+        return try await blocking {
+            try manager.coverageRerouteOffline(
+                territoryId: territoryId, planJson: planJson,
+                planRequestJson: planRequestJson, requestJson: requestJson)
+        }
+    }
+
     /// A complete MapLibre style JSON for an installed territory with
     /// **local** (offline) references, mirroring the web SDK's
     /// `buildStyle()`. Load it straight into MapLibre — the territory

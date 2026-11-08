@@ -24,7 +24,7 @@ import Valhalla
 /// call it through
 /// ``MapMapKit/OfflineRouting/route(router:waypoints:costing:adr:)``,
 /// which hops off the caller's executor.
-public final class ValhallaMobileRouter: OfflineRouter, @unchecked Sendable {
+public final class ValhallaMobileRouter: OfflineRouter, OfflineTraceRouter, @unchecked Sendable {
 
     private let engine: Valhalla
 
@@ -64,6 +64,21 @@ public final class ValhallaMobileRouter: OfflineRouter, @unchecked Sendable {
     public func route(requestJson: String) -> String {
         do {
             return try engine.route(rawRequest: requestJson)
+        } catch ValhallaError.valhallaError(let code, let message) {
+            return Self.envelope(code: code, message: message)
+        } catch {
+            return Self.envelope(code: -1, message: "\(error)")
+        }
+    }
+
+    /// The engine's `trace_route` action (valhalla-mobile's
+    /// `traceRoute(rawRequest:)`), for offline coverage guidance: a plan's
+    /// edge-walk pieces, walked exactly on the territory's tiles. A thrown
+    /// engine error comes back as the `{"code", "message"}` envelope, as
+    /// for ``route(requestJson:)``.
+    public func traceRoute(requestJson: String) -> String {
+        do {
+            return try engine.traceRoute(rawRequest: requestJson)
         } catch ValhallaError.valhallaError(let code, let message) {
             return Self.envelope(code: code, message: message)
         } catch {

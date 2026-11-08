@@ -14,6 +14,16 @@ import Foundation
 /// responses.
 public protocol OfflineRouter: LocalRouter {}
 
+/// An on-device engine's `trace_route` action, which offline coverage
+/// guidance walks a hosted plan's pieces with (`shape_match: edge_walk`,
+/// the engine's exact edge walk; see
+/// ``TerritoryStore/coverageGuidanceOffline(territoryId:router:planJson:requestJson:)``).
+///
+/// This is the Rust core's `LocalTraceRouter` callback interface with a
+/// Swift name. A separate protocol from ``OfflineRouter``, so an app's own
+/// routers keep compiling; `ValhallaMobileRouter` conforms to both.
+public protocol OfflineTraceRouter: LocalTraceRouter {}
+
 /// On-device route computation.
 ///
 /// The Rust core builds the Valhalla request (merging ADR dangerous-goods
