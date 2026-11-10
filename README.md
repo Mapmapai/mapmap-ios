@@ -2,7 +2,7 @@
 
 Fully offline turn-by-turn navigation for iOS: signed territory packages,
 on-device Valhalla routing with ADR dangerous-goods enforcement,
-Ferrostar-based guidance and MapLibre/PMTiles rendering — no Google
+Ferrostar-based guidance and MapLibre/PMTiles rendering. No Google
 services, no network required once a territory is installed.
 
 This is the binary + Swift-source distribution repository. Docs live at
@@ -56,5 +56,5 @@ The Rust navigation core ships as the `MapMapFFI` binary target
 
 ## Licence
 
-Proprietary — see [LICENSE](LICENSE) and
+Proprietary: see [LICENSE](LICENSE) and
 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
