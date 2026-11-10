@@ -20,7 +20,7 @@ or in `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/Mapmapai/mapmap-ios.git", from: "0.1.0")
+    .package(url: "https://github.com/Mapmapai/mapmap-ios.git", from: "0.9.0")
 ]
 ```
 
