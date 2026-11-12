@@ -5,13 +5,12 @@ permissive open-source components. This file lists the **architectural**
 third-party components, their licences (SPDX identifier + upstream licence
 text) and copyright lines. It is not exhaustive at the Rust-crate level: the
 complete, machine-generated crate report (via `cargo deny` / `cargo about`)
-is produced in CI and ships with the M4 SBOM/procurement pack. Component
-ancestry and how each is consumed is documented in
-[`docs/LINEAGE.md`](docs/LINEAGE.md).
+is produced in CI and ships with the M4 SBOM/procurement pack.
 
 | Component | Use | SPDX | Copyright | Licence text |
 |---|---|---|---|---|
 | [Valhalla](https://github.com/valhalla/valhalla) | Routing engine (server + tile builder; bounded ADR costing fork planned under `fork/`, M3) | MIT | Copyright (c) 2018 Valhalla contributors; Copyright (c) 2015-2017 Mapillary AB, Mapzen | [LICENSE.md](https://github.com/valhalla/valhalla/blob/master/COPYING) |
+| [valhalla-mobile](https://github.com/Rallista/valhalla-mobile) | The on-device routing engine of the Android, iOS and React Native SDKs (`ai.mapmap:valhalla-engine`, iOS `MapMapValhalla`): its Kotlin/Swift API and JNI/Obj-C++ wrapper at 0.6.4 (`852dd75c`), unmodified bar the Android Maven coordinates, compiled against Valhalla 3.9.1 plus the `fork/` patch series (`tools/mobile-engine/`). The native library statically links Valhalla's own dependencies: Boost (BSL-1.0), Protocol Buffers (BSD-3-Clause), Abseil (Apache-2.0), LZ4 (BSD-2-Clause), RapidJSON (MIT), robin-hood-hashing (MIT), unordered_dense (MIT) and Howard Hinnant's date (MIT). Its Swift sources need valhalla-openapi-models-swift (MIT) and Light-Swift-Untar (BSD-2-Clause); the Android library needs valhalla-models (MIT), osrm-openapi (BSD-3-Clause) and Moshi (Apache-2.0) | MIT | Copyright (c) 2024 Adventure Consortium Inc (dba Rallista); Copyright (c) 2018 Valhalla contributors | [LICENSE.md](https://github.com/Rallista/valhalla-mobile/blob/main/LICENSE.md) |
 | [MapLibre Native](https://github.com/maplibre/maplibre-native) | Map rendering in the mobile/web SDKs (unmodified binary dependency) | BSD-2-Clause | Copyright (c) MapLibre contributors; Copyright (c) 2014-2020 Mapbox | [LICENSE.md](https://github.com/maplibre/maplibre-native/blob/main/LICENSE.md) |
 | [Ferrostar](https://github.com/stadiamaps/ferrostar) | Turn-by-turn guidance core (pinned Rust crate) | BSD-3-Clause | Copyright (c) 2023 Stadia Maps, Inc. | [LICENSE](https://github.com/stadiamaps/ferrostar/blob/main/LICENSE) |
 | [Planetiler](https://github.com/onthegomap/planetiler) | Render-tile generation (build-side subprocess of `snfactory`, never distributed to devices) | Apache-2.0 | Copyright (c) Planetiler contributors / Michael Barry | [LICENSE](https://github.com/onthegomap/planetiler/blob/main/LICENSE) |
@@ -34,10 +33,10 @@ text is included in the distributed artefact's notices.
 OpenStreetMap data is © OpenStreetMap contributors, licensed
 [ODbL 1.0](https://opendatacommons.org/licenses/odbl/1-0/). OSM-derived
 artefacts (routing tiles, render tiles, geocode indices) are handled as ODbL
-Derivative Databases with a published recreation recipe — see
-[`docs/ODBL-RECIPE.md`](docs/ODBL-RECIPE.md).
+Derivative Databases with a published recreation recipe: see
+[mapmap.ai/open-source](https://mapmap.ai/open-source#odbl-compliance).
 
-## MPL-2.0 exception — UniFFI
+## MPL-2.0 exception: UniFFI
 
 The UniFFI crate family (`uniffi`, `uniffi_core`, `uniffi_bindgen`,
 `uniffi_build`, `uniffi_macros`, `uniffi_internal_macros`, `uniffi_meta`,
@@ -46,5 +45,5 @@ Mozilla Public License 2.0 (https://mozilla.org/MPL/2.0/). MPL-2.0 is
 file-scoped: our binaries link these crates unmodified, which imposes no
 obligations on first-party code; the covered files' source is publicly
 available upstream at https://github.com/mozilla/uniffi-rs. This is a
-per-crate exception recorded in `deny.toml` — no other copyleft licence is
+per-crate exception recorded in `deny.toml`; no other copyleft licence is
 permitted in the dependency graph.
