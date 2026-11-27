@@ -2001,19 +2001,24 @@ public protocol TerritoryManagerProtocol: AnyObject, Sendable {
      * `ValhallaMobileRouter`, configured on this territory's routing
      * layer). `plan_json` is the coverage job as the app stored it (or its
      * `result`); `request_json` is the hosted guidance request (`chunk_id`
-     * and `drive`, or `chunk`). See [`crate::coverage::guidance`].
+     * and `drive`, or `chunk`); `plan_request_json` is the body the plan was
+     * submitted with, when kept (its `time_factor` is the default, as
+     * hosted; not used with `chunk`). It comes last, with a default, so a
+     * call written before it existed still compiles. See
+     * [`crate::coverage::guidance`].
      */
-    func coverageGuidanceOffline(territoryId: String, router: LocalTraceRouter, planJson: String?, requestJson: String) throws  -> String
+    func coverageGuidanceOffline(territoryId: String, router: LocalTraceRouter, planJson: String?, requestJson: String, planRequestJson: String?) throws  -> String
     
     /**
      * Offline re-plan of the rest of a hosted coverage plan's drive round
      * a closed street, on this territory's routing tiles: the JSON
      * `POST /v1/coverage/reroute` answers. `plan_json` is the coverage job
      * as the app stored it (or its `result`); `plan_request_json` the body
-     * the plan was submitted with, when kept (its `include_private` and
-     * `turn_penalties` are the defaults, as hosted); `request_json` the
-     * hosted re-plan request. CPU-bound: call it off the main thread. See
-     * [`crate::coverage::reroute`].
+     * the plan was submitted with, when kept (its `include_private`,
+     * `turn_penalties`, `time_factor` and `max_outside_m`, with the `bbox`
+     * or `polygon` that is measured from, are the defaults, as hosted);
+     * `request_json` the hosted re-plan request. CPU-bound: call it off the
+     * main thread. See [`crate::coverage::reroute`].
      */
     func coverageRerouteOffline(territoryId: String, planJson: String?, planRequestJson: String?, requestJson: String) throws  -> String
     
@@ -2363,16 +2368,21 @@ open func clearLayerCache()throws   {try rustCallWithError(FfiConverterTypeNavCo
      * `ValhallaMobileRouter`, configured on this territory's routing
      * layer). `plan_json` is the coverage job as the app stored it (or its
      * `result`); `request_json` is the hosted guidance request (`chunk_id`
-     * and `drive`, or `chunk`). See [`crate::coverage::guidance`].
+     * and `drive`, or `chunk`); `plan_request_json` is the body the plan was
+     * submitted with, when kept (its `time_factor` is the default, as
+     * hosted; not used with `chunk`). It comes last, with a default, so a
+     * call written before it existed still compiles. See
+     * [`crate::coverage::guidance`].
      */
-open func coverageGuidanceOffline(territoryId: String, router: LocalTraceRouter, planJson: String?, requestJson: String)throws  -> String  {
+open func coverageGuidanceOffline(territoryId: String, router: LocalTraceRouter, planJson: String?, requestJson: String, planRequestJson: String? = nil)throws  -> String  {
     return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeOfflineCoverageError_lift) {
     uniffi_sn_nav_core_fn_method_territorymanager_coverage_guidance_offline(
             self.uniffiCloneHandle(),
         FfiConverterString.lower(territoryId),
         FfiConverterTypeLocalTraceRouter_lower(router),
         FfiConverterOptionString.lower(planJson),
-        FfiConverterString.lower(requestJson),$0
+        FfiConverterString.lower(requestJson),
+        FfiConverterOptionString.lower(planRequestJson),$0
     )
 })
 }
@@ -2382,10 +2392,11 @@ open func coverageGuidanceOffline(territoryId: String, router: LocalTraceRouter,
      * a closed street, on this territory's routing tiles: the JSON
      * `POST /v1/coverage/reroute` answers. `plan_json` is the coverage job
      * as the app stored it (or its `result`); `plan_request_json` the body
-     * the plan was submitted with, when kept (its `include_private` and
-     * `turn_penalties` are the defaults, as hosted); `request_json` the
-     * hosted re-plan request. CPU-bound: call it off the main thread. See
-     * [`crate::coverage::reroute`].
+     * the plan was submitted with, when kept (its `include_private`,
+     * `turn_penalties`, `time_factor` and `max_outside_m`, with the `bbox`
+     * or `polygon` that is measured from, are the defaults, as hosted);
+     * `request_json` the hosted re-plan request. CPU-bound: call it off the
+     * main thread. See [`crate::coverage::reroute`].
      */
 open func coverageRerouteOffline(territoryId: String, planJson: String?, planRequestJson: String?, requestJson: String)throws  -> String  {
     return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeOfflineCoverageError_lift) {
@@ -2725,7 +2736,9 @@ public protocol TerritorySearchProtocol: AnyObject, Sendable {
      * Free-text search (addresses, streets, places, POIs, UK postcodes;
      * prefix-tokenised, so it works for search-as-you-type). `near`
      * biases ranking towards the given point and fills each result's
-     * `distance_m`; `limit` caps the number of hits.
+     * `distance_m`; a bare street name means the street of that name
+     * within 30 km of it when there is one. `limit` caps the number of
+     * hits.
      */
     func search(query: String, near: RoutePoint?, limit: UInt32) throws  -> [Place]
     
@@ -2808,7 +2821,9 @@ open func reverse(lat: Double, lon: Double, limit: UInt32)throws  -> [Place]  {
      * Free-text search (addresses, streets, places, POIs, UK postcodes;
      * prefix-tokenised, so it works for search-as-you-type). `near`
      * biases ranking towards the given point and fills each result's
-     * `distance_m`; `limit` caps the number of hits.
+     * `distance_m`; a bare street name means the street of that name
+     * within 30 km of it when there is one. `limit` caps the number of
+     * hits.
      */
 open func search(query: String, near: RoutePoint?, limit: UInt32)throws  -> [Place]  {
     return try  FfiConverterSequenceTypePlace.lift(try rustCallWithError(FfiConverterTypeNavCoreError_lift) {
@@ -9111,10 +9126,10 @@ private let initializationResult: InitializationResult = {
     if (uniffi_sn_nav_core_checksum_method_territorymanager_clear_layer_cache() != 48212) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_sn_nav_core_checksum_method_territorymanager_coverage_guidance_offline() != 16995) {
+    if (uniffi_sn_nav_core_checksum_method_territorymanager_coverage_guidance_offline() != 37780) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_sn_nav_core_checksum_method_territorymanager_coverage_reroute_offline() != 35921) {
+    if (uniffi_sn_nav_core_checksum_method_territorymanager_coverage_reroute_offline() != 38157) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_sn_nav_core_checksum_method_territorymanager_install_dir() != 13166) {
@@ -9165,7 +9180,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_sn_nav_core_checksum_method_territorysearch_reverse() != 17589) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_sn_nav_core_checksum_method_territorysearch_search() != 12388) {
+    if (uniffi_sn_nav_core_checksum_method_territorysearch_search() != 8451) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_sn_nav_core_checksum_method_probecollector_finish() != 38627) {

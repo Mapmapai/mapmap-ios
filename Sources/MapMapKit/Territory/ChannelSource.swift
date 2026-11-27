@@ -110,6 +110,10 @@ public struct SignedChannelIndex: Equatable, Sendable {
 /// token aborts the transfer, not only the next one. `configuration`
 /// defaults to an ephemeral session (pass your own for a proxy or a test
 /// `URLProtocol`).
+///
+/// Layer blobs are downloaded straight to disk, never held in memory (a
+/// country's render layer runs to gigabytes), and `onBytes` is called with
+/// the running total while a blob is in flight.
 public final class HTTPChannelFetcher: LayerFetcher, @unchecked Sendable {
     public let source: ChannelSource
     private let apiKey: String?
@@ -167,12 +171,72 @@ public final class HTTPChannelFetcher: LayerFetcher, @unchecked Sendable {
         {
             throw FetchError.Transport(message: "refusing a non channel-relative path: \(relPath)")
         }
-        let data = try get(source.layerBaseURL.appendingPathComponent(relPath))
-        do {
-            try data.write(to: URL(fileURLWithPath: destPath), options: .atomic)
-        } catch {
-            throw FetchError.Transport(message: "cannot write \(destPath): \(error)")
+        try download(
+            source.layerBaseURL.appendingPathComponent(relPath), to: URL(fileURLWithPath: destPath))
+    }
+
+    /// GET `url` straight to `dest`. `URLSession` writes the body to a
+    /// temporary file as it arrives, and that file is moved into place only
+    /// for a complete 2xx response, so the blob is never held in memory and
+    /// an error body never reaches `dest`.
+    private func download(_ url: URL, to dest: URL) throws {
+        if cancel?.isCancelled() == true { throw FetchError.Transport(message: "cancelled") }
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        if let apiKey { request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization") }
+
+        let done = DispatchSemaphore(value: 0)
+        var failure: String?
+        var status = 0
+        let task = session.downloadTask(with: request) { location, response, error in
+            defer { done.signal() }
+            if let error {
+                failure = "request to \(url.absoluteString) failed: \(error.localizedDescription)"
+                return
+            }
+            status = (response as? HTTPURLResponse)?.statusCode ?? 0
+            guard (200...299).contains(status), let location else { return }
+            // URLSession deletes its temporary file when this handler
+            // returns, so the move has to happen here.
+            do {
+                try? FileManager.default.removeItem(at: dest)
+                try FileManager.default.moveItem(at: location, to: dest)
+            } catch {
+                failure = "cannot write \(dest.path): \(error)"
+            }
         }
+        task.resume()
+
+        // Bytes of this transfer already added to `received`.
+        var reported: Int64 = 0
+        func report(upTo count: Int64) {
+            guard count > reported else { return }
+            lock.lock()
+            received += count - reported
+            let total = received
+            lock.unlock()
+            reported = count
+            onBytes?(total)
+        }
+        while done.wait(timeout: .now() + .milliseconds(200)) == .timedOut {
+            if cancel?.isCancelled() == true { task.cancel() }
+            // Count body bytes only once the response is known to be a 2xx,
+            // so an error body is never reported as progress.
+            if let http = task.response as? HTTPURLResponse, (200...299).contains(http.statusCode) {
+                report(upTo: task.countOfBytesReceived)
+            }
+        }
+        if cancel?.isCancelled() == true {
+            try? FileManager.default.removeItem(at: dest)
+            throw FetchError.Transport(message: "cancelled")
+        }
+        if let failure { throw FetchError.Transport(message: failure) }
+        guard (200...299).contains(status) else {
+            lock.lock(); failedStatus = status; lock.unlock()
+            throw FetchError.Transport(message: "HTTP \(status) for \(url.absoluteString)")
+        }
+        let attributes = try? FileManager.default.attributesOfItem(atPath: dest.path)
+        report(upTo: (attributes?[.size] as? NSNumber)?.int64Value ?? task.countOfBytesReceived)
     }
 
     private func get(_ url: URL) throws -> Data {

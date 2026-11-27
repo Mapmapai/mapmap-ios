@@ -136,13 +136,20 @@ public enum GuidanceDisplay {
         case .navigating(
             _, let distanceToNextManeuverM, let distanceRemainingM, _,
             let currentInstruction, _, _, _, _, _, _):
-            return "\(currentInstruction) — "
+            return leadSentence(currentInstruction)
                 + "\(formatDistance(distanceToNextManeuverM)) to manoeuvre, "
                 + "\(formatDistance(distanceRemainingM)) remaining"
         case .arrived:
             return "Arrived at destination"
         case .offRoute(let deviationM):
-            return "Off route by \(formatDistance(deviationM)) — recalculating required"
+            return "Off route by \(formatDistance(deviationM)), recalculating required"
         }
+    }
+
+    /// The instruction as the first sentence of the summary: a full stop is
+    /// added when it does not already end in one (or in ! or ?).
+    private static func leadSentence(_ instruction: String) -> String {
+        guard let last = instruction.last else { return "" }
+        return ".!?".contains(last) ? "\(instruction) " : "\(instruction). "
     }
 }

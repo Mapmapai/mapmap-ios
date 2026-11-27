@@ -43,7 +43,7 @@ let package = Package(
         ),
         .binaryTarget(
             name: "ValhallaWrapper",
-            url: "https://github.com/Mapmapai/mapmap-ios/releases/download/0.9.0/valhalla-wrapper.xcframework.zip",
+            url: "https://github.com/Mapmapai/mapmap-ios/releases/download/0.10.0/valhalla-wrapper.xcframework.zip",
             checksum: "f707d50a2c83b75e87797f79ea6e42ad27dcd49142eee51b937ad482fbb2be16"
         ),
         .target(
@@ -64,8 +64,8 @@ let package = Package(
         ),
         .binaryTarget(
             name: "MapMapFFI",
-            url: "https://github.com/Mapmapai/mapmap-ios/releases/download/0.9.0/MapMapFFI.xcframework.zip",
-            checksum: "7b633be8deb6f56de14042511384f7174d4779942020ee4a53c6793bd5d7334e"
+            url: "https://github.com/Mapmapai/mapmap-ios/releases/download/0.10.0/MapMapFFI.xcframework.zip",
+            checksum: "de4c501c80417c411e8bd3cb430e5f368c6c35bf02d5179b8a4e252713e4fcd6"
         ),
     ],
     cLanguageStandard: .gnu17,

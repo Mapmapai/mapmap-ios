@@ -108,6 +108,13 @@ enum RoadRefTables {
             RoadRefTier(id: "pt-other", template: "pt-other", template3: nil, refPattern: "^(IC|EN|ER|EM|N) ?\\d", roadClasses: nil, subdivisions: nil, stripPrefix: nil),
             RoadRefTier(id: "e-road", template: "e-road", template3: nil, refPattern: "^E ?\\d", roadClasses: nil, subdivisions: nil, stripPrefix: nil),
         ],
+        "RO": [
+            RoadRefTier(id: "ro-a", template: "ro-a", template3: nil, refPattern: "^A ?\\d", roadClasses: nil, subdivisions: nil, stripPrefix: nil),
+            RoadRefTier(id: "ro-dn", template: "ro-dn", template3: "ro-dn-3", refPattern: "^DN ?\\d", roadClasses: nil, subdivisions: nil, stripPrefix: "^DN ?"),
+            RoadRefTier(id: "ro-dj", template: "ro-dj", template3: "ro-dj-3", refPattern: "^DJ ?\\d", roadClasses: nil, subdivisions: nil, stripPrefix: "^DJ ?"),
+            RoadRefTier(id: "ro-dc", template: "ro-dc", template3: "ro-dc-3", refPattern: "^DC ?\\d", roadClasses: nil, subdivisions: nil, stripPrefix: "^DC ?"),
+            RoadRefTier(id: "e-road", template: "e-road", template3: nil, refPattern: "^E ?\\d", roadClasses: nil, subdivisions: nil, stripPrefix: nil),
+        ],
         "SE": [
             RoadRefTier(id: "se-e", template: "se-e", template3: nil, refPattern: "^E ?\\d", roadClasses: nil, subdivisions: nil, stripPrefix: nil),
             RoadRefTier(id: "se-rv", template: "se-rv", template3: nil, refPattern: "^([1-9]\\d?|[1-4]\\d\\d)$", roadClasses: nil, subdivisions: nil, stripPrefix: nil),
@@ -269,7 +276,6 @@ enum RoadRefTables {
         "PY",
         "QA",
         "RE",
-        "RO",
         "RS",
         "RU",
         "RW",
@@ -349,6 +355,10 @@ enum RoadRefTables {
         "pl-s": "Expressway {text}",
         "pl-dk": "National road {text}",
         "pl-dw": "Regional road {text}",
+        "ro-a": "Motorway {text}",
+        "ro-dn": "National road DN{text}",
+        "ro-dj": "County road DJ{text}",
+        "ro-dc": "Communal road DC{text}",
         "us-interstate": "Interstate {text}",
         "us-route": "US Route {text}",
         "us-state": "State Route {text}",
@@ -756,6 +766,69 @@ enum RoadRefTables {
             outline: "M5.545 0L139.455 0C142.517 0 145 2.483 145 5.545L145 94.455C145 97.517 142.517 100 139.455 100L5.545 100C4.074 100 2.664 99.416 1.624 98.376C0.584 97.336 0 95.926 0 94.455L0 5.545C0 2.483 2.483 0 5.545 0Z",
             stretchX: [(14.091, 130.909)],
             text: BadgeSlot(words: nil, cx: 72.5, cy: [50.0], h: [75.758], maxw: 135.909, family: "transport", fill: "#000000", minsize: 0.0, centreTiles: true, kern: ["C *": -44.64, "M *": -44.64, "N *": -44.64, "R *": -44.64], ymin: nil, ymax: nil),
+            legend: nil
+        ),
+        "ro-a": ShieldLayout(
+            image: "sign_shield_ro_a",
+            width: 100.0,
+            height: 100.0,
+            outline: "M9.091 0L90.909 0C95.93 0 100 4.07 100 9.091L100 90.909C100 95.93 95.93 100 90.909 100L9.091 100C4.07 100 0 95.93 0 90.909L0 9.091C0 6.68 0.958 4.368 2.663 2.663C4.368 0.958 6.68 0 9.091 0Z",
+            stretchX: [(20.091, 79.909)],
+            text: BadgeSlot(words: nil, cx: 50.0, cy: [50.0], h: [56.0], maxw: 76.0, family: "fhwa-d", fill: "#FFFFFF", minsize: 0.0, centreTiles: false, kern: ["10": 6.0, "12": 4.0, "14": 9.0, "15": 5.0, "16": 5.0, "17": 4.0, "18": 5.0, "24": 5.0, "34": 5.0, "41": -6.0, "42": -5.0, "43": -7.0, "45": -4.0, "46": -4.0, "47": -5.0, "48": -4.0, "49": -6.0, "54": 4.0, "63": -5.0, "74": 4.0, "84": 5.0, "94": 4.0, "04": 6.0, "A 0": -24.0, "A 1": -28.0, "A 2": -28.0, "A 3": -28.0, "A 4": -21.0, "A 5": -28.0, "A 6": -28.0, "A 7": -28.0, "A 8": -28.0, "A 9": -28.0, "A0": 4.0, "A4": 7.0], ymin: nil, ymax: nil),
+            legend: nil
+        ),
+        "ro-dc": ShieldLayout(
+            image: "sign_shield_ro_dc",
+            width: 106.667,
+            height: 100.0,
+            outline: "M0 0L106.667 0L106.667 58L53.333 100L0 58Z",
+            stretchX: [(14.0, 92.667)],
+            text: BadgeSlot(words: nil, cx: 53.333, cy: [38.0], h: [40.0], maxw: 80.667, family: "fhwa-d", fill: "#000000", minsize: 0.0, centreTiles: false, kern: ["10": 6.0, "12": 4.0, "14": 9.0, "15": 5.0, "16": 5.0, "17": 4.0, "18": 5.0, "24": 5.0, "34": 5.0, "41": -6.0, "42": -5.0, "43": -7.0, "45": -4.0, "46": -4.0, "47": -5.0, "48": -4.0, "49": -6.0, "54": 4.0, "63": -5.0, "74": 4.0, "84": 5.0, "94": 4.0, "04": 6.0], ymin: nil, ymax: nil),
+            legend: nil
+        ),
+        "ro-dc-3": ShieldLayout(
+            image: "sign_shield_ro_dc_3",
+            width: 134.0,
+            height: 100.0,
+            outline: "M0 0L134 0L134 58L67 100L0 58Z",
+            stretchX: [(14.0, 120.0)],
+            text: BadgeSlot(words: nil, cx: 67.0, cy: [38.0], h: [36.0], maxw: 108.0, family: "fhwa-d", fill: "#000000", minsize: 0.0, centreTiles: false, kern: ["10": 6.0, "12": 4.0, "14": 9.0, "15": 5.0, "16": 5.0, "17": 4.0, "18": 5.0, "24": 5.0, "34": 5.0, "41": -6.0, "42": -5.0, "43": -7.0, "45": -4.0, "46": -4.0, "47": -5.0, "48": -4.0, "49": -6.0, "54": 4.0, "63": -5.0, "74": 4.0, "84": 5.0, "94": 4.0, "04": 6.0], ymin: nil, ymax: nil),
+            legend: nil
+        ),
+        "ro-dj": ShieldLayout(
+            image: "sign_shield_ro_dj",
+            width: 106.667,
+            height: 100.0,
+            outline: "M0 0L106.667 0L106.667 58L53.333 100L0 58Z",
+            stretchX: [(14.0, 92.667)],
+            text: BadgeSlot(words: nil, cx: 53.333, cy: [38.0], h: [40.0], maxw: 80.667, family: "fhwa-d", fill: "#FFFFFF", minsize: 0.0, centreTiles: false, kern: ["10": 6.0, "12": 4.0, "14": 9.0, "15": 5.0, "16": 5.0, "17": 4.0, "18": 5.0, "24": 5.0, "34": 5.0, "41": -6.0, "42": -5.0, "43": -7.0, "45": -4.0, "46": -4.0, "47": -5.0, "48": -4.0, "49": -6.0, "54": 4.0, "63": -5.0, "74": 4.0, "84": 5.0, "94": 4.0, "04": 6.0], ymin: nil, ymax: nil),
+            legend: nil
+        ),
+        "ro-dj-3": ShieldLayout(
+            image: "sign_shield_ro_dj_3",
+            width: 134.0,
+            height: 100.0,
+            outline: "M0 0L134 0L134 58L67 100L0 58Z",
+            stretchX: [(14.0, 120.0)],
+            text: BadgeSlot(words: nil, cx: 67.0, cy: [38.0], h: [36.0], maxw: 108.0, family: "fhwa-d", fill: "#FFFFFF", minsize: 0.0, centreTiles: false, kern: ["10": 6.0, "12": 4.0, "14": 9.0, "15": 5.0, "16": 5.0, "17": 4.0, "18": 5.0, "24": 5.0, "34": 5.0, "41": -6.0, "42": -5.0, "43": -7.0, "45": -4.0, "46": -4.0, "47": -5.0, "48": -4.0, "49": -6.0, "54": 4.0, "63": -5.0, "74": 4.0, "84": 5.0, "94": 4.0, "04": 6.0], ymin: nil, ymax: nil),
+            legend: nil
+        ),
+        "ro-dn": ShieldLayout(
+            image: "sign_shield_ro_dn",
+            width: 100.0,
+            height: 100.0,
+            outline: "M0 14C0 4 10 0 25 0C38 0 46 3 50 9C54 3 62 0 75 0C90 0 100 4 100 14L100 50C100 76 74 90 50 100C26 90 0 76 0 50Z",
+            stretchX: [(20.0, 80.0)],
+            text: BadgeSlot(words: nil, cx: 50.0, cy: [44.0], h: [40.0], maxw: 80.0, family: "fhwa-d", fill: "#FFFFFF", minsize: 0.0, centreTiles: false, kern: ["10": 6.0, "12": 4.0, "14": 9.0, "15": 5.0, "16": 5.0, "17": 4.0, "18": 5.0, "24": 5.0, "34": 5.0, "41": -6.0, "42": -5.0, "43": -7.0, "45": -4.0, "46": -4.0, "47": -5.0, "48": -4.0, "49": -6.0, "54": 4.0, "63": -5.0, "74": 4.0, "84": 5.0, "94": 4.0, "04": 6.0], ymin: nil, ymax: nil),
+            legend: nil
+        ),
+        "ro-dn-3": ShieldLayout(
+            image: "sign_shield_ro_dn_3",
+            width: 125.0,
+            height: 100.0,
+            outline: "M0 14C0 4 12.5 0 31.25 0C47.5 0 57.5 3 62.5 9C67.5 3 77.5 0 93.75 0C112.5 0 125 4 125 14L125 50C125 76 92.5 90 62.5 100C32.5 90 0 76 0 50Z",
+            stretchX: [(20.0, 105.0)],
+            text: BadgeSlot(words: nil, cx: 62.5, cy: [44.0], h: [40.0], maxw: 105.0, family: "fhwa-d", fill: "#FFFFFF", minsize: 0.0, centreTiles: false, kern: ["10": 6.0, "12": 4.0, "14": 9.0, "15": 5.0, "16": 5.0, "17": 4.0, "18": 5.0, "24": 5.0, "34": 5.0, "41": -6.0, "42": -5.0, "43": -7.0, "45": -4.0, "46": -4.0, "47": -5.0, "48": -4.0, "49": -6.0, "54": 4.0, "63": -5.0, "74": 4.0, "84": 5.0, "94": 4.0, "04": 6.0], ymin: nil, ymax: nil),
             legend: nil
         ),
         "se-e": ShieldLayout(

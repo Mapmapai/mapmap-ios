@@ -152,8 +152,12 @@ public final class URLSessionProbeUploader: ProbeUploader, @unchecked Sendable {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = Data(body.utf8)
 
-        let task = session.dataTask(with: request) { [weak self] _, response, error in
-            guard let self else { return }
+        // The handler holds the uploader until the request settles. The
+        // documented usage builds the uploader inline, so nothing else
+        // keeps it alive, and a weak capture dropped the retry and
+        // `onResult`. No cycle: URLSession releases the handler once it
+        // has run, and the retry closure is one-shot.
+        let task = session.dataTask(with: request) { _, response, error in
             let outcome = Self.classify(response: response, error: error)
             if outcome == .gaveUp, attempt < self.maxAttempts {
                 let delay = self.backoff(attempt)

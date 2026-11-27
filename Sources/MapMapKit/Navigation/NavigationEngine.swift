@@ -25,6 +25,10 @@ public actor NavigationEngine {
     private var lastSample: LocationSample?
     private var continuation: AsyncThrowingStream<NavigationState, Error>.Continuation?
     private var pumpTask: Task<Void, Never>?
+    /// Identifies the current run. A run that `navigate` has replaced
+    /// still has work queued on this actor (its cancelled pump, its
+    /// stream's termination handler), which must not touch its successor.
+    private var runID: UInt64 = 0
 
     public init(routeResponseJson: String, config: GuidanceConfig = GuidanceConfig()) {
         self.routeResponseJson = routeResponseJson
@@ -56,6 +60,8 @@ public actor NavigationEngine {
         NavigationState, Error
     > {
         stop()
+        runID &+= 1
+        let run = runID
 
         let (stream, continuation) = AsyncThrowingStream.makeStream(of: NavigationState.self)
         self.continuation = continuation
@@ -79,16 +85,16 @@ public actor NavigationEngine {
                     if Task.isCancelled { break }
                     try self.consume(sample)
                 }
-                self.finish(throwing: nil)
+                self.finish(run: run, throwing: nil)
             } catch is CancellationError {
-                self.finish(throwing: nil)
+                self.finish(run: run, throwing: nil)
             } catch {
-                self.finish(throwing: error)
+                self.finish(run: run, throwing: error)
             }
         }
 
         continuation.onTermination = { [weak self] _ in
-            Task { [weak self] in await self?.stop() }
+            Task { [weak self] in await self?.stop(run: run) }
         }
         return stream
     }
@@ -114,6 +120,13 @@ public actor NavigationEngine {
         lastSample = nil
     }
 
+    /// `stop()` for the stream of run `run`: nothing once a later
+    /// `navigate` has replaced that run.
+    private func stop(run: UInt64) {
+        guard run == runID else { return }
+        stop()
+    }
+
     private func consume(_ sample: LocationSample) throws {
         guard let session else { return }
         lastSample = sample
@@ -133,6 +146,14 @@ public actor NavigationEngine {
         if state.isArrived {
             finish(throwing: nil)
         }
+    }
+
+    /// `finish(throwing:)` for the pump of run `run`: nothing once a later
+    /// `navigate` has replaced that run, so an old pump can neither end
+    /// its successor's stream nor fail it with its own error.
+    private func finish(run: UInt64, throwing error: Error?) {
+        guard run == runID else { return }
+        finish(throwing: error)
     }
 
     private func finish(throwing error: Error?) {

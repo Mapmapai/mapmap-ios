@@ -11,10 +11,12 @@ import Foundation
 /// ("Location authorisation"). If authorisation is denied while
 /// streaming, the stream finishes by throwing `CLError.denied`.
 ///
-/// Samples map platform sentinels to `nil`: negative
-/// `horizontalAccuracy` (invalid fix channels), negative `speed` and
-/// negative `course` are all reported as absent rather than passed
-/// through.
+/// Fixes Core Location marks invalid (a negative `horizontalAccuracy`)
+/// are dropped, and so is a stale cached fix delivered as the stream
+/// starts (older than ten seconds). In the samples that are forwarded,
+/// platform sentinels map to `nil`: negative
+/// `speed` and negative `course` are reported as absent rather than
+/// passed through.
 public final class CoreLocationProvider: LocationProvider {
 
     /// Configuration forwarded to `CLLocationManager`.
@@ -27,7 +29,10 @@ public final class CoreLocationProvider: LocationProvider {
         /// Activity type hint for the platform's fusion.
         public var activityType: CLActivityType
         /// Whether to request background updates (requires the app's
-        /// `location` background mode).
+        /// `location` background mode; setting it without the mode
+        /// declared raises an exception). When on, the platform is also
+        /// told not to pause updates automatically, so a long wait at
+        /// lights with the screen off does not end the stream.
         public var allowsBackgroundLocationUpdates: Bool
 
         public init(
@@ -47,6 +52,57 @@ public final class CoreLocationProvider: LocationProvider {
 
     public init(configuration: Configuration = Configuration()) {
         self.configuration = configuration
+    }
+
+    /// A first fix older than this is Core Location's cached last-known
+    /// position rather than a fix for this drive.
+    static let maximumFirstFixAge: TimeInterval = 10
+    /// How long after the stream starts the first-fix age check applies.
+    /// Bounded so a device whose clock disagrees with its fix timestamps
+    /// still gets a stream.
+    static let firstFixAgeWindow: TimeInterval = 15
+
+    /// Whether a Core Location fix is fit to feed guidance.
+    ///
+    /// A negative `horizontalAccuracy` is Core Location saying the
+    /// coordinate itself is invalid. Forwarding it with an absent accuracy
+    /// would have the navigation core trust it exactly, so it is dropped.
+    ///
+    /// Core Location may also deliver a cached fix first when updates
+    /// start, minutes old and possibly from another place.
+    /// `awaitingFirstFixSince` is when the stream started, for as long as
+    /// it has not forwarded a fix yet (`nil` afterwards): within
+    /// `firstFixAgeWindow` of that start, a fix older than
+    /// `maximumFirstFixAge` is dropped. Later fixes are never dropped
+    /// for their age.
+    static func shouldForward(
+        _ location: CLLocation, now: Date, awaitingFirstFixSince start: Date?
+    ) -> Bool {
+        guard location.horizontalAccuracy >= 0 else { return false }
+        guard let start, now.timeIntervalSince(start) < firstFixAgeWindow else { return true }
+        return now.timeIntervalSince(location.timestamp) <= maximumFirstFixAge
+    }
+
+    /// When a stream started, until it has forwarded its first fix.
+    /// Delegate callbacks are nonisolated, hence the lock.
+    private final class FirstFixGate: @unchecked Sendable {
+        private let lock = NSLock()
+        private var start: Date?
+
+        func begin(at date: Date) {
+            lock.lock(); defer { lock.unlock() }
+            start = date
+        }
+
+        var awaitingSince: Date? {
+            lock.lock(); defer { lock.unlock() }
+            return start
+        }
+
+        func forwarded() {
+            lock.lock(); defer { lock.unlock() }
+            start = nil
+        }
     }
 
     public var locations: AsyncThrowingStream<LocationSample, Error> {
@@ -72,6 +128,7 @@ public final class CoreLocationProvider: LocationProvider {
         private let manager = CLLocationManager()
         private let configuration: Configuration
         private let continuation: AsyncThrowingStream<LocationSample, Error>.Continuation
+        private let firstFix = FirstFixGate()
         private var terminated: CheckedContinuation<Void, Never>?
 
         init(
@@ -90,7 +147,13 @@ public final class CoreLocationProvider: LocationProvider {
             #if os(iOS)
                 manager.allowsBackgroundLocationUpdates =
                     configuration.allowsBackgroundLocationUpdates
+                if configuration.allowsBackgroundLocationUpdates {
+                    // A paused manager delivers nothing more until the app
+                    // is back in the foreground.
+                    manager.pausesLocationUpdatesAutomatically = false
+                }
             #endif
+            firstFix.begin(at: Date())
             manager.startUpdatingLocation()
         }
 
@@ -114,7 +177,13 @@ public final class CoreLocationProvider: LocationProvider {
         nonisolated func locationManager(
             _ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]
         ) {
+            let now = Date()
             for location in locations {
+                guard
+                    CoreLocationProvider.shouldForward(
+                        location, now: now, awaitingFirstFixSince: firstFix.awaitingSince)
+                else { continue }
+                firstFix.forwarded()
                 continuation.yield(LocationSample(location))
             }
         }

@@ -17,7 +17,7 @@ public protocol OfflineRouter: LocalRouter {}
 /// An on-device engine's `trace_route` action, which offline coverage
 /// guidance walks a hosted plan's pieces with (`shape_match: edge_walk`,
 /// the engine's exact edge walk; see
-/// ``TerritoryStore/coverageGuidanceOffline(territoryId:router:planJson:requestJson:)``).
+/// ``TerritoryStore/coverageGuidanceOffline(territoryId:router:planJson:requestJson:planRequestJson:)``).
 ///
 /// This is the Rust core's `LocalTraceRouter` callback interface with a
 /// Swift name. A separate protocol from ``OfflineRouter``, so an app's own

@@ -205,10 +205,14 @@ public actor TerritoryStore {
 
     /// Bring `territoryId` to the channel's latest version, whichever way
     /// that takes: a first install from the channel when it is not
-    /// installed, a signed differential update when an older version is,
-    /// nothing when it is already current. Updates go through
+    /// installed, a signed differential update when a different version
+    /// is, nothing when it is already current. Updates go through
     /// ``checkForUpdate(territoryId:indexJson:indexSigBase64:fetcher:)``,
-    /// so a channel can never move an installed territory backwards.
+    /// which follows the signed index: a `latest_version` older than the
+    /// installed one is applied too (a rolled-back channel is an
+    /// instruction to downgrade). `sync` is therefore not rollback
+    /// protection: an app that must never move backwards compares the
+    /// versions itself before it calls `sync`.
     public func sync(
         territoryId: String,
         indexJson: String,
@@ -348,6 +352,11 @@ public actor TerritoryStore {
     ///     request.
     ///   - requestJson: the hosted guidance request: `chunk_id` and
     ///     `drive`, or `chunk`.
+    ///   - planRequestJson: the body the plan was submitted with, when the
+    ///     app kept it: its `time_factor` is the guidance's default, as for
+    ///     a hosted `job_id` request. `nil` (the default), or a body without
+    ///     one, is 1; a `time_factor` in `requestJson` always wins. Not used
+    ///     with a `chunk` request.
     /// - Throws: ``OfflineCoverageError`` (`TerritoryNotInstalled`,
     ///   `PlanOutsideTerritory`, `PieceRefused`, `InvalidRequest`,
     ///   `Engine`).
@@ -355,13 +364,14 @@ public actor TerritoryStore {
         territoryId: String,
         router: LocalTraceRouter,
         planJson: String?,
-        requestJson: String
+        requestJson: String,
+        planRequestJson: String? = nil
     ) async throws -> String {
         let manager = try manager()
         return try await blocking {
             try manager.coverageGuidanceOffline(
                 territoryId: territoryId, router: router, planJson: planJson,
-                requestJson: requestJson)
+                requestJson: requestJson, planRequestJson: planRequestJson)
         }
     }
 
@@ -374,8 +384,10 @@ public actor TerritoryStore {
     ///   - planJson: the coverage job as the app stored it, or its
     ///     `result`; `nil` with an inline `trace_route` request.
     ///   - planRequestJson: the body the plan was submitted with, when the
-    ///     app kept it: its `include_private` and `turn_penalties` are the
-    ///     re-plan's defaults, as for a hosted `job_id` request.
+    ///     app kept it: its `include_private`, `turn_penalties`,
+    ///     `time_factor` and `max_outside_m` are the re-plan's defaults, and
+    ///     its `bbox` or `polygon` the area `max_outside_m` is measured from,
+    ///     as for a hosted `job_id` request.
     ///   - requestJson: the hosted re-plan request (`chunk_id`, `drive`,
     ///     `position`, `avoid`, `step_index`, ...).
     /// - Throws: ``OfflineCoverageError`` (`TerritoryNotInstalled`,
